@@ -86,7 +86,7 @@ export async function confirmFact(
     // Parse temporal references from the value if it's a string
     let finalFactDate = factDate
     if (!finalFactDate && typeof value === "string") {
-      const { date } = extractTemporalInfo(value)
+      const { date } = await extractTemporalInfo(value)
       if (date) {
         finalFactDate = date.toISOString()
       }
@@ -289,7 +289,7 @@ export async function proposeEpisodic(text: string, confidenceValue: number, occ
 
   try {
     // Parse temporal references in the text
-    const { date: parsedDate, cleanedText, temporalPhrase } = extractTemporalInfo(text)
+    const { date: parsedDate, cleanedText, temporalPhrase } = await extractTemporalInfo(text)
 
     // Use parsed date if available, otherwise use provided occurredAt or current time
     const finalOccurredAt = parsedDate?.toISOString() || occurredAt || new Date().toISOString()
@@ -351,7 +351,7 @@ export async function confirmEpisodic(text: string, confidenceValue: number, occ
 
   try {
     // Parse temporal references in the text
-    const { date: parsedDate, cleanedText, temporalPhrase } = extractTemporalInfo(text)
+    const { date: parsedDate, cleanedText, temporalPhrase } = await extractTemporalInfo(text)
 
     // Use parsed date if available, otherwise use provided occurredAt or current time
     const finalOccurredAt = parsedDate?.toISOString() || occurredAt || new Date().toISOString()

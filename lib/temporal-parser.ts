@@ -4,7 +4,7 @@
  * Parse temporal references in text and convert to absolute dates
  * Examples: "yesterday", "last Tuesday", "two weeks ago", "in 2020"
  */
-export function parseTemporalReference(text: string, referenceDate: Date = new Date()): Date | null {
+export async function parseTemporalReference(text: string, referenceDate: Date = new Date()): Promise<Date | null> {
   const lowerText = text.toLowerCase().trim()
 
   // Today/now
@@ -117,12 +117,12 @@ export function parseTemporalReference(text: string, referenceDate: Date = new D
 /**
  * Extract temporal information from text and return both the parsed date and cleaned text
  */
-export function extractTemporalInfo(text: string): {
+export async function extractTemporalInfo(text: string): Promise<{
   date: Date | null
   cleanedText: string
   temporalPhrase: string | null
-} {
-  const parsedDate = parseTemporalReference(text)
+}> {
+  const parsedDate = await parseTemporalReference(text)
 
   if (!parsedDate) {
     return { date: null, cleanedText: text, temporalPhrase: null }
