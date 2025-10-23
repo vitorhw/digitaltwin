@@ -648,20 +648,33 @@ export async function getMemoryGraphData() {
       supabase
         .from("profile_facts")
         .select("id, key, value, confidence, status, sensitivity, created_at, updated_at, embedding")
-        .eq("user_id", user.id),
+        .eq("user_id", user.id)
+        .limit(1000), // Add limit to prevent overwhelming queries
       supabase
         .from("episodic_memories")
         .select("id, text, confidence, occurred_at, location, provenance_kind, created_at, embedding")
-        .eq("user_id", user.id),
+        .eq("user_id", user.id)
+        .limit(1000), // Add limit to prevent overwhelming queries
       supabase
         .from("doc_chunks")
         .select("id, doc_uri, doc_title, text, section_path, page_number, created_at, embedding")
-        .eq("user_id", user.id),
+        .eq("user_id", user.id)
+        .limit(1000), // Add limit to prevent overwhelming queries
     ])
 
-    if (factsResult.error) throw factsResult.error
-    if (memoriesResult.error) throw memoriesResult.error
-    if (documentsResult.error) throw documentsResult.error
+    // Check for errors with better error messages
+    if (factsResult.error) {
+      console.error("[v0] Error fetching facts:", factsResult.error)
+      throw new Error(`Failed to fetch facts: ${factsResult.error.message}`)
+    }
+    if (memoriesResult.error) {
+      console.error("[v0] Error fetching memories:", memoriesResult.error)
+      throw new Error(`Failed to fetch memories: ${memoriesResult.error.message}`)
+    }
+    if (documentsResult.error) {
+      console.error("[v0] Error fetching documents:", documentsResult.error)
+      throw new Error(`Failed to fetch documents: ${documentsResult.error.message}`)
+    }
 
     return {
       facts: factsResult.data || [],
@@ -670,7 +683,13 @@ export async function getMemoryGraphData() {
     }
   } catch (error) {
     console.error("[v0] Error fetching memory graph data:", error)
-    return { error: error instanceof Error ? error.message : "Failed to fetch memory graph data" }
+
+    const errorMessage = error instanceof Error ? error.message : "Failed to fetch memory graph data"
+    if (errorMessage.includes("Too Many") || errorMessage.includes("rate limit")) {
+      return { error: "Rate limit exceeded. Please wait a moment and try again." }
+    }
+
+    return { error: errorMessage }
   }
 }
 

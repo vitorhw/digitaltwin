@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, Loader2 } from "lucide-react"
+import { Send, Loader2, ChevronDown, ChevronUp } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 
@@ -69,7 +69,7 @@ export function ChatInterface() {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const { toast } = useToast()
 
-  const [expandedRemembered, setExpandedRemembered] = useState<Set<string>>(new Set())
+  const [expandedOps, setExpandedOps] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -173,172 +173,290 @@ export function ChatInterface() {
                   b.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
                 }`}
               >
-                {b.text}
+                {b.text || ""}
               </span>
 
               {b.role === "assistant" && b.ops && b.ops.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {b.ops.map((op) => {
-                    const keyArg = typeof op.args.key === "string" ? op.args.key : undefined
-                    const textArg = typeof op.args.text === "string" ? op.args.text : undefined
-                    const queryArg = typeof op.args.query === "string" ? op.args.query : undefined
+                  {b.ops
+                    .sort((a, b) => {
+                      const aScore = a.retrieved_data?.[0]?.combined_score || a.args.confidence || 0
+                      const bScore = b.retrieved_data?.[0]?.combined_score || b.args.confidence || 0
+                      return bScore - aScore
+                    })
+                    .map((op) => {
+                      const keyArg = typeof op.args.key === "string" ? op.args.key : undefined
+                      const valueArg = op.args.value
+                      const textArg = typeof op.args.text === "string" ? op.args.text : undefined
+                      const queryArg = typeof op.args.query === "string" ? op.args.query : undefined
+                      const isExpanded = expandedOps.has(op.id)
 
-                    if (op.name === "retrieved_facts" && op.retrieved_data) {
-                      const facts = Array.isArray(op.retrieved_data) ? op.retrieved_data : []
-                      const isExpanded = expandedRemembered.has(op.id)
-                      const displayCount = isExpanded ? facts.length : 3
-
-                      return (
-                        <div key={op.id} className="w-full">
-                          <span className="inline-block rounded border border-purple-300 bg-purple-50 px-2 py-1 text-xs text-purple-700 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-400">
-                            <b>Remembered</b> • {facts.length} fact(s)
-                          </span>
-                          {facts.length > 0 && (
-                            <div className="mt-1 space-y-1">
-                              {facts.slice(0, displayCount).map((fact: any, idx: number) => (
-                                <div
-                                  key={idx}
-                                  className="rounded border border-purple-200 bg-purple-50/50 px-2 py-1 text-xs text-purple-600 dark:border-purple-900 dark:bg-purple-950/50 dark:text-purple-400"
-                                  title={JSON.stringify(fact)}
-                                >
+                      if (op.name === "propose_fact" || op.name === "confirm_fact") {
+                        return (
+                          <div key={op.id} className="w-full">
+                            <button
+                              onClick={() => {
+                                setExpandedOps((prev) => {
+                                  const next = new Set(prev)
+                                  if (isExpanded) {
+                                    next.delete(op.id)
+                                  } else {
+                                    next.add(op.id)
+                                  }
+                                  return next
+                                })
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900"
+                            >
+                              <b>{op.name === "propose_fact" ? "Proposed Fact" : "Confirmed Fact"}</b>
+                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            </button>
+                            {isExpanded && (
+                              <div className="mt-1">
+                                <div className="rounded border border-amber-200 bg-amber-50/50 px-2 py-1 text-xs text-amber-600 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-400">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
                                       <div className="flex items-center gap-1 mb-0.5">
                                         <Badge variant="outline" className="text-[10px] h-4 px-1">
                                           fact
                                         </Badge>
-                                        {fact.confidence && (
+                                        {op.args.confidence && (
                                           <span className="text-[10px] text-muted-foreground">
-                                            {(fact.confidence * 100).toFixed(0)}%
+                                            {(Number(op.args.confidence) * 100).toFixed(0)}%
                                           </span>
                                         )}
                                       </div>
-                                      <p className="line-clamp-2">
-                                        <b>{fact.key}:</b> {JSON.stringify(fact.value)}
+                                      <p className="break-words">
+                                        <b>{keyArg}:</b> {JSON.stringify(valueArg)}
                                       </p>
                                     </div>
                                   </div>
                                 </div>
-                              ))}
-                              {facts.length > 3 && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="w-full h-6 text-xs"
-                                  onClick={() => {
-                                    setExpandedRemembered((prev) => {
-                                      const next = new Set(prev)
-                                      if (isExpanded) {
-                                        next.delete(op.id)
-                                      } else {
-                                        next.add(op.id)
-                                      }
-                                      return next
-                                    })
-                                  }}
-                                >
-                                  {isExpanded ? "Show less" : `+${facts.length - 3} more`}
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    }
+                              </div>
+                            )}
+                          </div>
+                        )
+                      }
 
-                    if (op.name === "search_memory" && op.retrieved_data) {
-                      const results = Array.isArray(op.retrieved_data) ? op.retrieved_data : []
-                      const isExpanded = expandedRemembered.has(op.id)
-                      const displayCount = isExpanded ? results.length : 3
-
-                      return (
-                        <div key={op.id} className="w-full">
-                          <span className="inline-block rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-400">
-                            <b>Remembered</b> • {results.length} item(s)
-                          </span>
-                          {results.length > 0 && (
-                            <div className="mt-1 space-y-1">
-                              {results.slice(0, displayCount).map((item: any, idx: number) => (
-                                <div
-                                  key={idx}
-                                  className="rounded border border-blue-200 bg-blue-50/50 px-2 py-1 text-xs text-blue-600 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-400"
-                                  title={JSON.stringify(item)}
-                                >
+                      if (op.name === "propose_episodic" || op.name === "confirm_episodic") {
+                        return (
+                          <div key={op.id} className="w-full">
+                            <button
+                              onClick={() => {
+                                setExpandedOps((prev) => {
+                                  const next = new Set(prev)
+                                  if (isExpanded) {
+                                    next.delete(op.id)
+                                  } else {
+                                    next.add(op.id)
+                                  }
+                                  return next
+                                })
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-xs text-teal-700 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900"
+                            >
+                              <b>{op.name === "propose_episodic" ? "Proposed Memory" : "Confirmed Memory"}</b>
+                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            </button>
+                            {isExpanded && (
+                              <div className="mt-1">
+                                <div className="rounded border border-teal-200 bg-teal-50/50 px-2 py-1 text-xs text-teal-600 dark:border-teal-900 dark:bg-teal-950/50 dark:text-teal-400">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
                                       <div className="flex items-center gap-1 mb-0.5">
                                         <Badge variant="outline" className="text-[10px] h-4 px-1">
-                                          {item.source}
+                                          episodic
                                         </Badge>
-                                        {item.combined_score && (
+                                        {op.args.confidence && (
                                           <span className="text-[10px] text-muted-foreground">
-                                            {(item.combined_score * 100).toFixed(0)}%
+                                            {(Number(op.args.confidence) * 100).toFixed(0)}%
                                           </span>
                                         )}
                                       </div>
-                                      <p className="line-clamp-2">{item.text}</p>
+                                      <p className="break-words">{textArg}</p>
                                     </div>
                                   </div>
                                 </div>
-                              ))}
-                              {results.length > 3 && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="w-full h-6 text-xs"
-                                  onClick={() => {
-                                    setExpandedRemembered((prev) => {
-                                      const next = new Set(prev)
-                                      if (isExpanded) {
-                                        next.delete(op.id)
-                                      } else {
+                              </div>
+                            )}
+                          </div>
+                        )
+                      }
+
+                      if (op.name === "retrieved_facts" && op.retrieved_data) {
+                        const facts = Array.isArray(op.retrieved_data) ? op.retrieved_data : []
+                        const displayCount = isExpanded ? facts.length : 3
+
+                        return (
+                          <div key={op.id} className="w-full">
+                            <button
+                              onClick={() => {
+                                setExpandedOps((prev) => {
+                                  const next = new Set(prev)
+                                  if (isExpanded) {
+                                    next.delete(op.id)
+                                  } else {
+                                    next.add(op.id)
+                                  }
+                                  return next
+                                })
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-purple-300 bg-purple-50 px-2 py-1 text-xs text-purple-700 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900"
+                            >
+                              <b>Remembered</b> • {facts.length} fact(s)
+                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            </button>
+                            {isExpanded && facts.length > 0 && (
+                              <div className="mt-1 space-y-1">
+                                {facts
+                                  .sort((a: any, b: any) => (b.confidence || 0) - (a.confidence || 0))
+                                  .slice(0, displayCount)
+                                  .map((fact: any, idx: number) => (
+                                    <div
+                                      key={idx}
+                                      className="rounded border border-purple-200 bg-purple-50/50 px-2 py-1 text-xs text-purple-600 dark:border-purple-900 dark:bg-purple-950/50 dark:text-purple-400"
+                                      title={JSON.stringify(fact)}
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-1 mb-0.5">
+                                            <Badge variant="outline" className="text-[10px] h-4 px-1">
+                                              fact
+                                            </Badge>
+                                            {fact.confidence && (
+                                              <span className="text-[10px] text-muted-foreground">
+                                                {(fact.confidence * 100).toFixed(0)}%
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="line-clamp-2">
+                                            <b>{fact.key}:</b> {JSON.stringify(fact.value)}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                {facts.length > 3 && displayCount === 3 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full h-6 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setExpandedOps((prev) => {
+                                        const next = new Set(prev)
                                         next.add(op.id)
-                                      }
-                                      return next
-                                    })
-                                  }}
-                                >
-                                  {isExpanded ? "Show less" : `+${results.length - 3} more`}
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                                        return next
+                                      })
+                                    }}
+                                  >
+                                    +{facts.length - 3} more
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      }
+
+                      if (op.name === "search_memory" && op.retrieved_data) {
+                        const results = Array.isArray(op.retrieved_data) ? op.retrieved_data : []
+                        const displayCount = isExpanded ? results.length : 3
+
+                        return (
+                          <div key={op.id} className="w-full">
+                            <button
+                              onClick={() => {
+                                setExpandedOps((prev) => {
+                                  const next = new Set(prev)
+                                  if (isExpanded) {
+                                    next.delete(op.id)
+                                  } else {
+                                    next.add(op.id)
+                                  }
+                                  return next
+                                })
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900"
+                            >
+                              <b>Remembered</b> • {results.length} item(s)
+                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            </button>
+                            {isExpanded && results.length > 0 && (
+                              <div className="mt-1 space-y-1">
+                                {results
+                                  .sort((a: any, b: any) => (b.combined_score || 0) - (a.combined_score || 0))
+                                  .slice(0, displayCount)
+                                  .map((item: any, idx: number) => (
+                                    <div
+                                      key={idx}
+                                      className="rounded border border-blue-200 bg-blue-50/50 px-2 py-1 text-xs text-blue-600 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-400"
+                                      title={JSON.stringify(item)}
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-1 mb-0.5">
+                                            <Badge variant="outline" className="text-[10px] h-4 px-1">
+                                              {item.source}
+                                            </Badge>
+                                            {item.combined_score && (
+                                              <span className="text-[10px] text-muted-foreground">
+                                                {(item.combined_score * 100).toFixed(0)}%
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="line-clamp-2">{item.text}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                {results.length > 3 && displayCount === 3 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full h-6 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setExpandedOps((prev) => {
+                                        const next = new Set(prev)
+                                        next.add(op.id)
+                                        return next
+                                      })
+                                    }}
+                                  >
+                                    +{results.length - 3} more
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      }
+
+                      const statusColor =
+                        op.status === "error"
+                          ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"
+                          : op.status === "ignored"
+                            ? "border-gray-300 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
+                            : "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400"
+
+                      return (
+                        <span
+                          key={op.id}
+                          className={`rounded border px-2 py-1 text-xs ${statusColor}`}
+                          title={JSON.stringify(op.args)}
+                        >
+                          <b>{op.name}</b>
+                          {keyArg ? <> • {keyArg}</> : null}
+                          {textArg ? <> • "{textArg.slice(0, 40)}"</> : null}
+                          {queryArg ? <> • "{queryArg.slice(0, 40)}"</> : null}
+                        </span>
                       )
-                    }
-
-                    const statusColor =
-                      op.status === "error"
-                        ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"
-                        : op.status === "ignored"
-                          ? "border-gray-300 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
-                          : "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400"
-
-                    return (
-                      <span
-                        key={op.id}
-                        className={`rounded border px-2 py-1 text-xs ${statusColor}`}
-                        title={JSON.stringify(op.args)}
-                      >
-                        <b>{op.name}</b>
-                        {keyArg ? <> • {keyArg}</> : null}
-                        {textArg ? <> • "{textArg.slice(0, 40)}"</> : null}
-                        {queryArg ? <> • "{queryArg.slice(0, 40)}"</> : null}
-                      </span>
-                    )
-                  })}
+                    })}
                 </div>
               )}
             </div>
           ))}
-
-          {busy && (
-            <div className="flex justify-start">
-              <div className="rounded-lg bg-muted px-4 py-3">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

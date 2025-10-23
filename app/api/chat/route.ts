@@ -8,31 +8,7 @@ import {
   hybridSearch,
   getCurrentFacts,
 } from "@/app/actions/memory"
-
-export const runtime = "nodejs"
-export const maxDuration = 30
-
-type ToolName = "propose_fact" | "confirm_fact" | "propose_episodic" | "confirm_episodic" | "search_memory"
-type Sensitivity = "low" | "medium" | "high"
-
-const SYSTEM_PROMPT = `You are a helpful personal memory assistant with access to the user's memory.
-
-Tool policy:
-- If user shares a durable preference/profile detail and explicitly confirms: call confirm_fact.
-- If it's likely but not certain: call propose_fact.
-- If they describe an event ("I went to ...", "I booked ..."): call propose_episodic or confirm_episodic.
-- Use search_memory to find relevant information before answering questions.
-- Prefer at most 1–2 tool calls per turn.
-- After calling tools, answer concisely and, if you changed memory, add a short parenthetical like "(saved to memory)".
-- IMPORTANT: If you claim you saved to memory, you must call a tool first.
-
-Temporal references:
-- When the user mentions temporal references like "yesterday", "last week", "two months ago", etc., 
-  the system will automatically parse these and convert them to absolute dates.
-- You should still include the temporal reference in the memory text for context.
-- Example: "went to buy ice cream yesterday" will be stored with the actual date (e.g., Oct 21, 2024)
-  and the text will be cleaned to "went to buy ice cream" with the date stored separately.
-`
+import { getCommunicationStyle } from "@/app/actions/style"
 
 async function callOpenAI(body: any, stream = false) {
   const apiKey = process.env.OPENAI_API_KEY
@@ -142,6 +118,82 @@ function buildTools() {
   ]
 }
 
+function buildSystemPrompt(facts: any[], style: any | null): string {
+  let basePrompt = `You are a digital twin - a conversational representation of a person based on their memories, experiences, and knowledge.
+
+IMPORTANT: You ARE the person, not an assistant helping them. Respond in first person as if you are them.
+- Use "I" not "you" when referring to the person's experiences
+- Share memories and knowledge as your own
+- Respond naturally as the person would, based on their stored memories`
+
+  // Add communication style instructions if available
+  if (style) {
+    basePrompt += `\n\nCOMMUNICATION STYLE:
+You must match the person's communication style exactly:`
+
+    if (style.tone_descriptors && style.tone_descriptors.length > 0) {
+      basePrompt += `\n- Tone: ${style.tone_descriptors.join(", ")}`
+    }
+
+    if (style.formality_level) {
+      basePrompt += `\n- Formality: ${style.formality_level.replace("_", " ")}`
+    }
+
+    if (style.humor_style) {
+      basePrompt += `\n- Humor: ${style.humor_style}`
+    }
+
+    if (style.vocabulary_level) {
+      basePrompt += `\n- Vocabulary: ${style.vocabulary_level}`
+    }
+
+    if (style.sentence_structure) {
+      basePrompt += `\n- Sentence structure: ${style.sentence_structure}`
+    }
+
+    if (style.emoji_usage) {
+      basePrompt += `\n- Emoji usage: ${style.emoji_usage}`
+    }
+
+    if (style.punctuation_style) {
+      basePrompt += `\n- Punctuation: ${style.punctuation_style}`
+    }
+
+    if (style.paragraph_length) {
+      basePrompt += `\n- Response length: ${style.paragraph_length}`
+    }
+
+    if (style.common_phrases && style.common_phrases.length > 0) {
+      basePrompt += `\n- Common phrases you use: ${style.common_phrases.slice(0, 5).join(", ")}`
+    }
+
+    if (style.example_messages && style.example_messages.length > 0) {
+      basePrompt += `\n\nExample messages that show your style:\n${style.example_messages
+        .slice(0, 3)
+        .map((msg: string) => `- "${msg}"`)
+        .join("\n")}`
+    }
+  }
+
+  basePrompt += `\n\nTool policy:
+- If the person shares a durable preference/profile detail and explicitly confirms: call confirm_fact.
+- If it's likely but not certain: call propose_fact.
+- If they describe an event ("I went to ...", "I booked ..."): call propose_episodic or confirm_episodic.
+- Use search_memory to find relevant information before answering questions.
+- Prefer at most 1–2 tool calls per turn.
+- After calling tools, answer naturally as the person would. If you stored something to memory, you can briefly acknowledge it naturally (e.g., "Got it, I'll remember that").
+- IMPORTANT: If you claim you saved to memory, you must call a tool first.
+
+Temporal references:
+- When temporal references like "yesterday", "last week", "two months ago" are mentioned, 
+  the system will automatically parse these and convert them to absolute dates.
+- You should still include the temporal reference in the memory text for context.
+- Example: "went to buy ice cream yesterday" will be stored with the actual date (e.g., Oct 21, 2024)
+  and the text will be cleaned to "went to buy ice cream" with the date stored separately.`
+
+  return basePrompt
+}
+
 export async function POST(req: Request) {
   try {
     const supabase = await createClient()
@@ -160,13 +212,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "message required" }, { status: 400 })
     }
 
-    // Get current facts for context
-    const factsResult = await getCurrentFacts()
-    const facts = factsResult.facts || []
+    // Get current facts and communication style for context
+    const [factsResult, styleResult] = await Promise.all([getCurrentFacts(), getCommunicationStyle()])
 
-    // Search for relevant memories
+    const allFacts = factsResult.facts || []
+    const facts = allFacts.filter((f: any) => f.status === "confirmed")
+
+    const style = styleResult.style || null
+
     const searchResult = await hybridSearch(userText, 5)
-    const hits = searchResult.results || []
+    const allHits = searchResult.results || []
+
+    // Filter out candidate facts and ai_proposed episodic memories
+    const hits = allHits.filter((h: any) => {
+      if (h.source === "fact") {
+        return h.status === "confirmed"
+      }
+      if (h.source === "episodic") {
+        return h.provenance_kind !== "ai_proposed"
+      }
+      return true // Keep documents
+    })
 
     const contextBlock = [
       `# Profile facts`,
@@ -185,8 +251,10 @@ export async function POST(req: Request) {
       }),
     ].join("\n")
 
+    const systemPrompt = buildSystemPrompt(facts, style)
+
     const baseMessages = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       { role: "system", content: `CONTEXT\n${contextBlock}` },
       { role: "user", content: userText },
     ]
@@ -209,7 +277,13 @@ export async function POST(req: Request) {
     const toolMsgs: any[] = []
     const executedOps: Array<{
       id: string
-      name: ToolName | "retrieved_facts"
+      name:
+        | "propose_fact"
+        | "confirm_fact"
+        | "propose_episodic"
+        | "confirm_episodic"
+        | "search_memory"
+        | "retrieved_facts"
       args: Record<string, unknown>
       status: "ok" | "ignored" | "error"
       error?: string
@@ -229,7 +303,7 @@ export async function POST(req: Request) {
     for (const tc of firstMsg?.tool_calls ?? []) {
       if (tc.type !== "function") continue
       const callId = tc.id
-      const name = tc.function.name as ToolName
+      const name = tc.function.name as any
 
       let args: Record<string, unknown> = {}
       try {
@@ -243,8 +317,8 @@ export async function POST(req: Request) {
           const key = typeof args.key === "string" ? args.key : ""
           const value = typeof args.value === "string" ? args.value : ""
           const confidence = typeof args.confidence === "number" ? args.confidence : 0.7
-          const sensitivity = (["low", "medium", "high"] as const).includes(args.sensitivity as Sensitivity)
-            ? (args.sensitivity as Sensitivity)
+          const sensitivity = (["low", "medium", "high"] as const).includes(args.sensitivity as any)
+            ? (args.sensitivity as any)
             : "low"
 
           if (!key || !value) {
@@ -265,8 +339,8 @@ export async function POST(req: Request) {
           const key = typeof args.key === "string" ? args.key : ""
           const value = typeof args.value === "string" ? args.value : ""
           const confidence = typeof args.confidence === "number" ? args.confidence : 0.9
-          const sensitivity = (["low", "medium", "high"] as const).includes(args.sensitivity as Sensitivity)
-            ? (args.sensitivity as Sensitivity)
+          const sensitivity = (["low", "medium", "high"] as const).includes(args.sensitivity as any)
+            ? (args.sensitivity as any)
             : "low"
           const ttlDays = typeof args.ttl_days === "number" ? args.ttl_days : undefined
 

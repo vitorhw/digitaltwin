@@ -6,12 +6,14 @@ import { useState } from "react"
 import { signIn } from "@/app/actions/auth"
 import { ChatInterface } from "@/components/chat-interface"
 import { DebugFactsPanel } from "@/components/debug-facts-panel"
+import { StyleConfigPanel } from "@/components/style-config-panel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
-import { LogOut, Brain } from "lucide-react"
+import { LogOut } from "lucide-react"
 
 interface SinglePageAppProps {
   isLoggedIn: boolean
@@ -92,33 +94,41 @@ export function SinglePageApp({ isLoggedIn, initialFacts, initialMemories, initi
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      {/* Header with sign out */}
-      <div className="border-b px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          
-        </div>
+      <div className="border-b px-6 py-3 flex items-center justify-end">
         <Button variant="ghost" size="sm" onClick={handleSignOut}>
           <LogOut className="h-4 w-4 mr-2" />
           Sign Out
         </Button>
       </div>
 
-      {/* Main content: Chat + Debug side by side */}
+      {/* Main content: Chat + Debug/Style side by side */}
       <div className="flex flex-1 overflow-hidden">
         {/* Chat section */}
         <div className="flex-1 border-r">
           <ChatInterface />
         </div>
 
-        {/* Debug section */}
         <div className="w-[500px] flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-hidden">
-            <DebugFactsPanel
-              initialFacts={initialFacts}
-              initialMemories={initialMemories}
-              initialDocuments={initialDocuments}
-            />
-          </div>
+          <Tabs defaultValue="debug" className="flex-1 flex flex-col">
+            <TabsList className="w-full rounded-none border-b">
+              <TabsTrigger value="debug" className="flex-1">
+                Debug
+              </TabsTrigger>
+              <TabsTrigger value="style" className="flex-1">
+                Style
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="debug" className="flex-1 overflow-auto m-0">
+              <DebugFactsPanel
+                initialFacts={initialFacts}
+                initialMemories={initialMemories}
+                initialDocuments={initialDocuments}
+              />
+            </TabsContent>
+            <TabsContent value="style" className="flex-1 overflow-auto m-0">
+              <StyleConfigPanel />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

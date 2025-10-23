@@ -27,14 +27,10 @@ import {
 } from "@/app/actions/memory"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Trash2, RefreshCw, Sparkles, Database, AlertCircle, Search, AlertTriangle } from "lucide-react"
+import { Trash2, RefreshCw, Sparkles, AlertCircle, Search, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
@@ -434,16 +430,6 @@ export function DebugFactsPanel({
       <div className="flex-shrink-0 p-4 border-b space-y-3">
         <div className="flex flex-wrap gap-2">
           <Button
-            onClick={handleGenerateMockData}
-            variant="default"
-            size="sm"
-            disabled={loading}
-            className="flex-1 min-w-[140px]"
-          >
-            <Database className="h-4 w-4 mr-2" />
-            Mock Data
-          </Button>
-          <Button
             onClick={handleCheckFunctions}
             variant="outline"
             size="sm"
@@ -453,8 +439,6 @@ export function DebugFactsPanel({
             <AlertCircle className="h-4 w-4 mr-2" />
             Check Functions
           </Button>
-        </div>
-        <div className="flex flex-wrap gap-2">
           <Button
             onClick={handleSweepExpired}
             variant="outline"
@@ -465,6 +449,8 @@ export function DebugFactsPanel({
             <Sparkles className="h-4 w-4 mr-2" />
             Sweep Expired
           </Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <Button
             onClick={refreshAll}
             variant="outline"
@@ -566,10 +552,9 @@ export function DebugFactsPanel({
         </Card>
 
         <Tabs defaultValue="facts" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="facts">Facts ({facts.length})</TabsTrigger>
             <TabsTrigger value="episodic">Episodic ({memories.length})</TabsTrigger>
-            <TabsTrigger value="documents">Documents ({documents.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="facts" className="space-y-6">
@@ -588,146 +573,58 @@ export function DebugFactsPanel({
                     <p className="text-sm text-muted-foreground">No facts found</p>
                   ) : (
                     facts.map((fact) => (
-                      <div key={fact.id} className="border rounded-lg p-4 space-y-2">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-mono text-sm font-semibold">{fact.key}</span>
-                              <Badge variant={fact.status === "confirmed" ? "default" : "secondary"}>
-                                {fact.status}
-                              </Badge>
-                              <Badge variant="outline">{fact.sensitivity}</Badge>
-                              {fact.schema_name && <Badge variant="secondary">{fact.schema_name}</Badge>}
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              {typeof fact.value === "object" ? JSON.stringify(fact.value) : fact.value}
-                            </p>
-                            <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-                              <span>Confidence: {(fact.confidence * 100).toFixed(0)}%</span>
-                              {fact.ttl_days && <span>TTL: {fact.ttl_days} days</span>}
-                              {fact.expires_at && (
-                                <span>Expires: {new Date(fact.expires_at).toLocaleDateString()}</span>
-                              )}
-                              {fact.fact_date && <span>Date: {new Date(fact.fact_date).toLocaleDateString()}</span>}
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            {fact.status === "candidate" && (
-                              <>
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  onClick={() => handleApproveFact(fact.key)}
-                                  disabled={loading}
-                                >
-                                  Approve
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleRejectFact(fact.key)}
-                                  disabled={loading}
-                                >
-                                  Reject
-                                </Button>
-                              </>
-                            )}
-                            {fact.status === "confirmed" && (
+                      <div key={fact.id} className="border rounded-lg p-3 space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-sm font-semibold break-words">{fact.key}</span>
+                          <Badge variant={fact.status === "confirmed" ? "default" : "secondary"}>{fact.status}</Badge>
+                          <Badge variant="outline">{fact.sensitivity}</Badge>
+                          {fact.schema_name && <Badge variant="secondary">{fact.schema_name}</Badge>}
+                        </div>
+                        <p className="text-sm text-muted-foreground break-words">
+                          {typeof fact.value === "object" ? JSON.stringify(fact.value) : fact.value}
+                        </p>
+                        <div className="flex gap-3 flex-wrap text-xs text-muted-foreground">
+                          <span>Confidence: {(fact.confidence * 100).toFixed(0)}%</span>
+                          {fact.ttl_days && <span>TTL: {fact.ttl_days} days</span>}
+                          {fact.expires_at && <span>Expires: {new Date(fact.expires_at).toLocaleDateString()}</span>}
+                          {fact.fact_date && <span>Date: {new Date(fact.fact_date).toLocaleDateString()}</span>}
+                        </div>
+                        <div className="flex gap-2 pt-1 flex-wrap">
+                          {fact.status === "candidate" && (
+                            <>
                               <Button
-                                variant="ghost"
+                                variant="default"
                                 size="sm"
-                                onClick={() => handleDeleteFact(fact.key)}
+                                onClick={() => handleApproveFact(fact.key)}
                                 disabled={loading}
+                                className="flex-1 min-w-[80px]"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                ✓ Approve
                               </Button>
-                            )}
-                          </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleRejectFact(fact.key)}
+                                disabled={loading}
+                                className="flex-1 min-w-[80px]"
+                              >
+                                ✕ Reject
+                              </Button>
+                            </>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteFact(fact.key)}
+                            disabled={loading}
+                            className="ml-auto"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     ))
                   )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Insert Fact</CardTitle>
-                <CardDescription>Create a new fact with optional confirmation requirement</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="fact-key">Key</Label>
-                      <Input
-                        id="fact-key"
-                        placeholder="e.g., favorite_color"
-                        value={factKey}
-                        onChange={(e) => setFactKey(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fact-value">Value</Label>
-                      <Input
-                        id="fact-value"
-                        placeholder="e.g., blue"
-                        value={factValue}
-                        onChange={(e) => setFactValue(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="fact-confidence">Confidence (0-1)</Label>
-                      <Input
-                        id="fact-confidence"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1"
-                        value={factConfidence}
-                        onChange={(e) => setFactConfidence(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fact-sensitivity">Sensitivity</Label>
-                      <Select value={factSensitivity} onValueChange={(v: any) => setFactSensitivity(v)}>
-                        <SelectTrigger id="fact-sensitivity">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="low">Low</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="fact-ttl">TTL (days, optional)</Label>
-                      <Input
-                        id="fact-ttl"
-                        type="number"
-                        placeholder="e.g., 30"
-                        value={factTtl}
-                        onChange={(e) => setFactTtl(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="needs-confirmation"
-                      checked={needsConfirmation}
-                      onCheckedChange={(checked) => setNeedsConfirmation(checked as boolean)}
-                    />
-                    <Label htmlFor="needs-confirmation" className="text-sm font-normal cursor-pointer">
-                      Needs confirmation (insert as candidate)
-                    </Label>
-                  </div>
-                  <Button onClick={handleInsertFact} disabled={loading}>
-                    {needsConfirmation ? "Insert Candidate Fact" : "Insert Confirmed Fact"}
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -745,164 +642,63 @@ export function DebugFactsPanel({
                     <p className="text-sm text-muted-foreground">No memories found</p>
                   ) : (
                     memories.map((memory) => (
-                      <div key={memory.id} className="border rounded-lg p-4 space-y-2">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <p className="text-sm">{memory.text}</p>
-                            <div className="flex gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                              <span>Confidence: {(memory.confidence * 100).toFixed(0)}%</span>
-                              <span>Occurred: {new Date(memory.occurred_at).toLocaleDateString()}</span>
-                              {memory.location && <span>Location: {memory.location}</span>}
-                              {memory.emotional_valence !== null && memory.emotional_valence !== undefined && (
-                                <span>
-                                  Emotion: {memory.emotional_valence > 0 ? "+" : ""}
-                                  {memory.emotional_valence.toFixed(1)}
-                                </span>
-                              )}
-                              {memory.importance !== null && memory.importance !== undefined && (
-                                <span>Importance: {memory.importance.toFixed(1)}</span>
-                              )}
-                              {memory.recall_count !== null && memory.recall_count !== undefined && (
-                                <span>Recalls: {memory.recall_count}</span>
-                              )}
-                              {memory.memory_strength !== null && memory.memory_strength !== undefined && (
-                                <span>Strength: {memory.memory_strength.toFixed(2)}</span>
-                              )}
-                              {memory.last_recalled_at && (
-                                <span>Last recalled: {new Date(memory.last_recalled_at).toLocaleDateString()}</span>
-                              )}
-                              <Badge variant="outline" className="ml-auto">
-                                {memory.provenance_kind}
-                              </Badge>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            {memory.provenance_kind === "ai_proposed" && (
-                              <>
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  onClick={() => handleApproveMemory(memory.id)}
-                                  disabled={loading}
-                                >
-                                  Approve
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleRejectMemory(memory.id)}
-                                  disabled={loading}
-                                >
-                                  Reject
-                                </Button>
-                              </>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteMemory(memory.id)}
-                              disabled={loading}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                      <div key={memory.id} className="border rounded-lg p-3 space-y-2">
+                        <p className="text-sm break-words">{memory.text}</p>
+                        <div className="flex gap-3 flex-wrap text-xs text-muted-foreground">
+                          <span>Confidence: {(memory.confidence * 100).toFixed(0)}%</span>
+                          <span>Occurred: {new Date(memory.occurred_at).toLocaleDateString()}</span>
+                          {memory.location && <span>Location: {memory.location}</span>}
+                          {memory.emotional_valence !== null && memory.emotional_valence !== undefined && (
+                            <span>
+                              Emotion: {memory.emotional_valence > 0 ? "+" : ""}
+                              {memory.emotional_valence.toFixed(1)}
+                            </span>
+                          )}
+                          {memory.importance !== null && memory.importance !== undefined && (
+                            <span>Importance: {memory.importance.toFixed(1)}</span>
+                          )}
+                          {memory.recall_count !== null && memory.recall_count !== undefined && (
+                            <span>Recalls: {memory.recall_count}</span>
+                          )}
+                          {memory.memory_strength !== null && memory.memory_strength !== undefined && (
+                            <span>Strength: {memory.memory_strength.toFixed(2)}</span>
+                          )}
+                          {memory.last_recalled_at && (
+                            <span>Last recalled: {new Date(memory.last_recalled_at).toLocaleDateString()}</span>
+                          )}
                         </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Insert Episodic Memory</CardTitle>
-                <CardDescription>Create a new memory with optional confirmation requirement</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="episodic-text">Text</Label>
-                    <Textarea
-                      id="episodic-text"
-                      placeholder="Describe the event or experience..."
-                      value={episodicText}
-                      onChange={(e) => setEpisodicText(e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="episodic-confidence">Confidence (0-1)</Label>
-                      <Input
-                        id="episodic-confidence"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1"
-                        value={episodicConfidence}
-                        onChange={(e) => setEpisodicConfidence(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="episodic-location">Location (optional)</Label>
-                      <Input
-                        id="episodic-location"
-                        placeholder="e.g., San Francisco"
-                        value={episodicLocation}
-                        onChange={(e) => setEpisodicLocation(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="episodic-needs-confirmation"
-                      checked={episodicNeedsConfirmation}
-                      onCheckedChange={(checked) => setEpisodicNeedsConfirmation(checked as boolean)}
-                    />
-                    <Label htmlFor="episodic-needs-confirmation" className="text-sm font-normal cursor-pointer">
-                      Needs confirmation (insert as candidate)
-                    </Label>
-                  </div>
-                  <Button onClick={handleInsertEpisodic} disabled={loading}>
-                    {episodicNeedsConfirmation ? "Insert Candidate Memory" : "Insert Confirmed Memory"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="documents" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Document Chunks</CardTitle>
-                <CardDescription>Stored document fragments</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {documents.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No documents found</p>
-                  ) : (
-                    documents.map((doc) => (
-                      <div key={doc.id} className="border rounded-lg p-4 space-y-2">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-semibold text-sm">{doc.doc_title}</span>
-                              <Badge variant="outline">{doc.doc_uri}</Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground line-clamp-2">{doc.text}</p>
-                            <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-                              {doc.section_path && <span>Section: {doc.section_path}</span>}
-                              {doc.page_number && <span>Page: {doc.page_number}</span>}
-                              <span>Created: {new Date(doc.created_at).toLocaleDateString()}</span>
-                            </div>
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{memory.provenance_kind}</Badge>
+                        </div>
+                        <div className="flex gap-2 pt-1 flex-wrap">
+                          {memory.provenance_kind === "ai_proposed" && (
+                            <>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleApproveMemory(memory.id)}
+                                disabled={loading}
+                                className="flex-1 min-w-[80px]"
+                              >
+                                ✓ Approve
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleRejectMemory(memory.id)}
+                                disabled={loading}
+                                className="flex-1 min-w-[80px]"
+                              >
+                                ✕ Reject
+                              </Button>
+                            </>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteDocument(doc.id)}
+                            onClick={() => handleDeleteMemory(memory.id)}
                             disabled={loading}
+                            className="ml-auto"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -910,71 +706,6 @@ export function DebugFactsPanel({
                       </div>
                     ))
                   )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Insert Document Chunk</CardTitle>
-                <CardDescription>Add a new document fragment</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="doc-uri">URI</Label>
-                      <Input
-                        id="doc-uri"
-                        placeholder="e.g., /docs/guide.pdf"
-                        value={docUri}
-                        onChange={(e) => setDocUri(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="doc-title">Title</Label>
-                      <Input
-                        id="doc-title"
-                        placeholder="e.g., User Guide"
-                        value={docTitle}
-                        onChange={(e) => setDocTitle(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="doc-text">Text</Label>
-                    <Textarea
-                      id="doc-text"
-                      placeholder="Document content..."
-                      value={docText}
-                      onChange={(e) => setDocText(e.target.value)}
-                      rows={4}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="doc-section">Section Path (optional)</Label>
-                      <Input
-                        id="doc-section"
-                        placeholder="e.g., Chapter 1 > Introduction"
-                        value={docSection}
-                        onChange={(e) => setDocSection(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="doc-page">Page Number (optional)</Label>
-                      <Input
-                        id="doc-page"
-                        type="number"
-                        placeholder="e.g., 5"
-                        value={docPage}
-                        onChange={(e) => setDocPage(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <Button onClick={handleInsertDocument} disabled={loading}>
-                    Insert Document Chunk
-                  </Button>
                 </div>
               </CardContent>
             </Card>
