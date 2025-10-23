@@ -7,6 +7,7 @@ import { signIn } from "@/app/actions/auth"
 import { ChatInterface } from "@/components/chat-interface"
 import { DebugFactsPanel } from "@/components/debug-facts-panel"
 import { StyleConfigPanel } from "@/components/style-config-panel"
+import { ProceduralRulesPanel } from "@/components/procedural-rules-panel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -20,9 +21,16 @@ interface SinglePageAppProps {
   initialFacts: any[]
   initialMemories: any[]
   initialDocuments: any[]
+  initialRules: any[]
 }
 
-export function SinglePageApp({ isLoggedIn, initialFacts, initialMemories, initialDocuments }: SinglePageAppProps) {
+export function SinglePageApp({
+  isLoggedIn,
+  initialFacts,
+  initialMemories,
+  initialDocuments,
+  initialRules,
+}: SinglePageAppProps) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
@@ -114,6 +122,9 @@ export function SinglePageApp({ isLoggedIn, initialFacts, initialMemories, initi
               <TabsTrigger value="debug" className="flex-1">
                 Debug
               </TabsTrigger>
+              <TabsTrigger value="rules" className="flex-1">
+                Rules
+              </TabsTrigger>
               <TabsTrigger value="style" className="flex-1">
                 Style
               </TabsTrigger>
@@ -124,6 +135,9 @@ export function SinglePageApp({ isLoggedIn, initialFacts, initialMemories, initi
                 initialMemories={initialMemories}
                 initialDocuments={initialDocuments}
               />
+            </TabsContent>
+            <TabsContent value="rules" className="flex-1 overflow-auto m-0">
+              <ProceduralRulesPanel initialRules={initialRules} />
             </TabsContent>
             <TabsContent value="style" className="flex-1 overflow-auto m-0">
               <StyleConfigPanel />

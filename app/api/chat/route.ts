@@ -9,6 +9,7 @@ import {
   getCurrentFacts,
 } from "@/app/actions/memory"
 import { getCommunicationStyle } from "@/app/actions/style"
+import { getProceduralRules, createProceduralRule } from "@/app/actions/procedural-rules"
 
 async function callOpenAI(body: any, stream = false) {
   const apiKey = process.env.OPENAI_API_KEY
@@ -115,16 +116,72 @@ function buildTools() {
         },
       },
     },
+    {
+      type: "function",
+      function: {
+        name: "propose_procedural_rule",
+        description:
+          "Propose a procedural rule (habit, preference, routine, if/then rule, or skill) based on the conversation",
+        parameters: {
+          type: "object",
+          properties: {
+            rule_type: {
+              type: "string",
+              enum: ["habit", "preference", "routine", "if_then", "skill"],
+              description: "Type of procedural rule",
+            },
+            condition: {
+              type: "string",
+              description: "Optional: For if/then rules, the condition (e.g., 'when stressed', 'if traveling')",
+            },
+            action: {
+              type: "string",
+              description: "The action or behavior (e.g., 'book flights with United', 'go for a walk')",
+            },
+            context: { type: "string", description: "Optional: Additional context or explanation" },
+            confidence: { type: "number", minimum: 0, maximum: 1, description: "Confidence level (0-1)" },
+            frequency: {
+              type: "string",
+              enum: ["always", "usually", "sometimes", "rarely"],
+              description: "How often this rule applies",
+            },
+            importance: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+              description: "Importance level (0-1)",
+            },
+          },
+          required: ["rule_type", "action", "confidence"],
+        },
+      },
+    },
   ]
 }
 
-function buildSystemPrompt(facts: any[], style: any | null): string {
+function buildSystemPrompt(facts: any[], style: any | null, rules: any[]): string {
   let basePrompt = `You are a digital twin - a conversational representation of a person based on their memories, experiences, and knowledge.
 
 IMPORTANT: You ARE the person, not an assistant helping them. Respond in first person as if you are them.
 - Use "I" not "you" when referring to the person's experiences
 - Share memories and knowledge as your own
 - Respond naturally as the person would, based on their stored memories`
+
+  if (rules && rules.length > 0) {
+    basePrompt += `\n\nPROCEDURAL RULES (Habits, Preferences, and Routines):
+You must follow these behavioral patterns and preferences:`
+
+    for (const rule of rules) {
+      const ruleText = rule.condition ? `${rule.condition} → ${rule.action}` : rule.action
+      const frequency = rule.frequency ? ` (${rule.frequency})` : ""
+      basePrompt += `\n- [${rule.rule_type}] ${ruleText}${frequency}`
+      if (rule.context) {
+        basePrompt += ` - ${rule.context}`
+      }
+    }
+
+    basePrompt += `\n\nWhen responding, naturally incorporate these rules into your behavior and recommendations.`
+  }
 
   // Add communication style instructions if available
   if (style) {
@@ -179,6 +236,7 @@ You must match the person's communication style exactly:`
 - If the person shares a durable preference/profile detail and explicitly confirms: call confirm_fact.
 - If it's likely but not certain: call propose_fact.
 - If they describe an event ("I went to ...", "I booked ..."): call propose_episodic or confirm_episodic.
+- If they mention a habit, preference, routine, or if/then rule: call propose_procedural_rule.
 - Use search_memory to find relevant information before answering questions.
 - Prefer at most 1–2 tool calls per turn.
 - After calling tools, answer naturally as the person would. If you stored something to memory, you can briefly acknowledge it naturally (e.g., "Got it, I'll remember that").
@@ -212,13 +270,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "message required" }, { status: 400 })
     }
 
-    // Get current facts and communication style for context
-    const [factsResult, styleResult] = await Promise.all([getCurrentFacts(), getCommunicationStyle()])
+    const [factsResult, styleResult, rulesResult] = await Promise.all([
+      getCurrentFacts(),
+      getCommunicationStyle(),
+      getProceduralRules(),
+    ])
 
     const allFacts = factsResult.facts || []
     const facts = allFacts.filter((f: any) => f.status === "confirmed")
-
     const style = styleResult.style || null
+    const rules = rulesResult.rules || []
 
     const searchResult = await hybridSearch(userText, 5)
     const allHits = searchResult.results || []
@@ -231,7 +292,7 @@ export async function POST(req: Request) {
       if (h.source === "episodic") {
         return h.provenance_kind !== "ai_proposed"
       }
-      return true // Keep documents
+      return true
     })
 
     const contextBlock = [
@@ -251,7 +312,7 @@ export async function POST(req: Request) {
       }),
     ].join("\n")
 
-    const systemPrompt = buildSystemPrompt(facts, style)
+    const systemPrompt = buildSystemPrompt(facts, style, rules)
 
     const baseMessages = [
       { role: "system", content: systemPrompt },
@@ -284,6 +345,7 @@ export async function POST(req: Request) {
         | "confirm_episodic"
         | "search_memory"
         | "retrieved_facts"
+        | "propose_procedural_rule"
       args: Record<string, unknown>
       status: "ok" | "ignored" | "error"
       error?: string
@@ -422,6 +484,36 @@ export async function POST(req: Request) {
               tool_call_id: callId,
               content: `Found ${resultCount} results:\n${resultSummary}`,
             })
+          }
+        } else if (name === "propose_procedural_rule") {
+          const ruleType = args.rule_type as any
+          const action = typeof args.action === "string" ? args.action : ""
+          const condition = typeof args.condition === "string" ? args.condition : undefined
+          const context = typeof args.context === "string" ? args.context : undefined
+          const confidence = typeof args.confidence === "number" ? args.confidence : 0.7
+          const frequency = args.frequency as any
+          const importance = typeof args.importance === "number" ? args.importance : 0.5
+
+          if (!action || !ruleType) {
+            executedOps.push({ id: callId, name, args, status: "ignored" })
+            toolMsgs.push({ role: "tool", tool_call_id: callId, content: "ignored: missing action or rule_type" })
+            continue
+          }
+
+          const result = await createProceduralRule(ruleType, action, {
+            condition,
+            context,
+            confidence,
+            frequency,
+            importance,
+          })
+
+          if (result.error) {
+            executedOps.push({ id: callId, name, args, status: "error", error: result.error })
+            toolMsgs.push({ role: "tool", tool_call_id: callId, content: `error: ${result.error}` })
+          } else {
+            executedOps.push({ id: callId, name, args, status: "ok" })
+            toolMsgs.push({ role: "tool", tool_call_id: callId, content: "ok" })
           }
         } else {
           executedOps.push({ id: callId, name, args, status: "ignored" })
