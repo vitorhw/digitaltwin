@@ -426,7 +426,7 @@ export function DebugFactsPanel({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
       <div className="flex-shrink-0 p-4 border-b space-y-3">
         <div className="flex flex-wrap gap-2">
           <Button
@@ -474,7 +474,7 @@ export function DebugFactsPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-6">
         {diagnostics && (
           <Card>
             <CardHeader>

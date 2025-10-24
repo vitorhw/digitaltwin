@@ -102,23 +102,23 @@ export function SinglePageApp({
 
   return (
     <div className="flex h-screen flex-col bg-background">
-      <div className="border-b px-6 py-3 flex items-center justify-end">
-        <Button variant="ghost" size="sm" onClick={handleSignOut}>
-          <LogOut className="h-4 w-4 mr-2" />
-          Sign Out
+      <div className="flex-shrink-0 border-b px-4 py-2 flex items-center justify-end">
+        <Button variant="ghost" size="sm" onClick={handleSignOut} className="gap-2">
+          <LogOut className="h-4 w-4" />
+          <span className="hidden sm:inline">Sign Out</span>
         </Button>
       </div>
 
       {/* Main content: Chat + Debug/Style side by side */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Chat section */}
-        <div className="flex-1 border-r">
+        <div className="flex-1 border-r overflow-hidden">
           <ChatInterface />
         </div>
 
-        <div className="w-[500px] flex flex-col overflow-hidden">
-          <Tabs defaultValue="debug" className="flex-1 flex flex-col">
-            <TabsList className="w-full rounded-none border-b">
+        <div className="w-[500px] flex flex-col overflow-hidden min-h-0">
+          <Tabs defaultValue="debug" className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <TabsList className="flex-shrink-0 w-full rounded-none border-b">
               <TabsTrigger value="debug" className="flex-1">
                 Debug
               </TabsTrigger>
@@ -129,17 +129,17 @@ export function SinglePageApp({
                 Style
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="debug" className="flex-1 overflow-auto m-0">
+            <TabsContent value="debug" className="flex-1 overflow-hidden min-h-0 m-0">
               <DebugFactsPanel
                 initialFacts={initialFacts}
                 initialMemories={initialMemories}
                 initialDocuments={initialDocuments}
               />
             </TabsContent>
-            <TabsContent value="rules" className="flex-1 overflow-auto m-0">
+            <TabsContent value="rules" className="flex-1 overflow-hidden min-h-0 m-0">
               <ProceduralRulesPanel initialRules={initialRules} />
             </TabsContent>
-            <TabsContent value="style" className="flex-1 overflow-auto m-0">
+            <TabsContent value="style" className="flex-1 overflow-hidden min-h-0 m-0">
               <StyleConfigPanel />
             </TabsContent>
           </Tabs>
