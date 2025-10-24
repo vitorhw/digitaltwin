@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
 // This endpoint can be called by Vercel Cron Jobs to periodically sweep expired facts
-// Add to vercel.json: { "crons": [{ "path": "/api/cron/sweep-expired", "schedule": "0 * * * *" }] }
+// Add to vercel.json: { "crons": [{ "path": "/api/cron/sweep-expired", "schedule": "0 2 * * *" }] }
 export async function GET(request: Request) {
   try {
     const supabase = await createClient()
