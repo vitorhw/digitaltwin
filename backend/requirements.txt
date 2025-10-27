@@ -1,0 +1,5 @@
+# Requirements for the backend FastAPI application
+fastapi
+uvicorn
+requests
+python-dotenv

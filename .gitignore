@@ -25,3 +25,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ides and caches
+.vscode/
+__pycache__/
+*.py[cod]

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>HeyGen Demo – Backend Test Page</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; margin: 24px; max-width: 900px; }
+    label { display:block; margin-top:12px; font-weight:600; }
+    select, textarea, input, button { width:100%; padding:10px; margin-top:6px; }
+    textarea { min-height: 120px; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .status { margin:14px 0; color:#555; }
+    video { width:100%; max-height: 480px; margin-top:16px; background:#000; }
+  </style>
+</head>
+<body>
+  <h1>HeyGen API Backend Test Page</h1>
+  <p>Enter text, select an Avatar and Voice, then click “Generate Video”.  
+     The backend will call HeyGen and return a playable video URL.</p>
+
+  <label for="backend">Backend URL</label>
+  <input id="backend" value="http://localhost:8001" />
+
+  <div class="row">
+    <div>
+      <label for="avatar">Avatar</label>
+      <select id="avatar"></select>
+    </div>
+    <div>
+      <label for="voice">Voice</label>
+      <select id="voice"></select>
+    </div>
+  </div>
+
+  <label for="text">Input Text (&lt;1500 characters)</label>
+  <textarea id="text">Hello! This avatar video was created via the HeyGen API demo.</textarea>
+
+  <button id="btn">Generate Video</button>
+  <div class="status" id="status">Status: idle</div>
+
+  <video id="player" controls></video>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const backend = $("backend");
+    const avatarSel = $("avatar");
+    const voiceSel = $("voice");
+    const textArea = $("text");
+    const btn = $("btn");
+    const statusEl = $("status");
+    const player = $("player");
+
+    async function loadOptions() {
+      const base = backend.value.replace(/\/$/, "");
+      statusEl.textContent = "Status: loading avatars and voices…";
+      try {
+        const [avatars, voices] = await Promise.all([
+          fetch(`${base}/avatars`).then(r => r.json()),
+          fetch(`${base}/voices`).then(r => r.json()),
+        ]);
+        avatarSel.innerHTML = avatars.map(a =>
+          `<option value="${a.avatar_id}">${a.avatar_name || a.avatar_id}</option>`
+        ).join("");
+        voiceSel.innerHTML = voices.map(v =>
+          `<option value="${v.voice_id}">${v.name || v.voice_id} (${v.language || "unknown"})</option>`
+        ).join("");
+        statusEl.textContent = "Status: ready";
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Status: failed to load options (check backend and API key)";
+      }
+    }
+
+    async function generate() {
+      const base = backend.value.replace(/\/$/, "");
+      const text = textArea.value.trim();
+      if (!text) {
+        alert("Please enter some text.");
+        return;
+      }
+      btn.disabled = true;
+      statusEl.textContent = "Status: generating (this may take 30–120 seconds)…";
+      player.removeAttribute("src");
+
+      try {
+        const res = await fetch(`${base}/generate_video`, {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify({
+            text,
+            avatar_id: avatarSel.value || null,
+            voice_id: voiceSel.value || null
+          }),
+        });
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg);
+        }
+        const data = await res.json();
+        statusEl.textContent = `Status: ${data.status}, duration ${data.duration || "?"}s`;
+        if (data.video_url) {
+          player.src = data.video_url;
+          player.play().catch(()=>{ /* autoplay may be blocked */ });
+        } else {
+          statusEl.textContent += " (no video URL returned)";
+        }
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Status: generation failed – " + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    btn.addEventListener("click", generate);
+    backend.addEventListener("change", loadOptions);
+    loadOptions();
+  </script>
+</body>
+</html>
