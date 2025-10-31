@@ -25,3 +25,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+#face_demo_related
+.venv/
+face_demo/static/generated/**
+__pycache__/
