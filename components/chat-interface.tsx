@@ -1,13 +1,17 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { ChevronDown, ChevronUp, Loader2, Send, Volume2, VolumeX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, Loader2, ChevronDown, ChevronUp } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
+import { useToast } from "@/hooks/use-toast"
+import { setSpeakBackEnabled } from "@/app/actions/voice"
+import { useVoiceClone } from "@/components/voice-clone-provider"
+import { AudioProgressBar } from "@/components/audio-progress-bar"
 
 type Role = "user" | "assistant"
+
 type MemoryOpName =
   | "propose_fact"
   | "confirm_fact"
@@ -15,14 +19,15 @@ type MemoryOpName =
   | "confirm_episodic"
   | "search_memory"
   | "retrieved_facts"
+
 type MemoryOpStatus = "ok" | "ignored" | "error"
 
-type MemoryOp = {
+interface MemoryOp {
   id: string
   name: MemoryOpName
   args: Record<string, unknown>
   status?: MemoryOpStatus
-  retrieved_data?: any
+  retrieved_data?: unknown
 }
 
 interface Bubble {
@@ -31,32 +36,55 @@ interface Bubble {
   ops?: MemoryOp[]
 }
 
+function safeId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  return Math.random().toString(36).slice(2)
+}
+
 function decodeOpsFromHeaders(headers: Headers): MemoryOp[] {
   const raw = headers.get("x-memory-ops")
   if (!raw) return []
+
   try {
-    const json = typeof atob === "function" ? atob(raw) : raw
+  const json = typeof atob === "function" ? atob(raw) : raw
     const parsed = JSON.parse(json) as Array<Record<string, unknown>>
     return parsed
-      .map((x) => {
-        const id = typeof x?.id === "string" ? x.id : crypto.randomUUID()
-        const name = x?.name
-        const args = (x?.args ?? {}) as Record<string, unknown>
-        const status = (x?.status as MemoryOpStatus) ?? undefined
-        const retrieved_data = x?.retrieved_data
+      .map((entry) => {
+        const name = entry?.name
         if (
-          name === "propose_fact" ||
-          name === "confirm_fact" ||
-          name === "propose_episodic" ||
-          name === "confirm_episodic" ||
-          name === "search_memory" ||
-          name === "retrieved_facts"
+          name !== "propose_fact" &&
+          name !== "confirm_fact" &&
+          name !== "propose_episodic" &&
+          name !== "confirm_episodic" &&
+          name !== "search_memory" &&
+          name !== "retrieved_facts"
         ) {
-          return { id, name, args, status, retrieved_data } as MemoryOp
+          return null
         }
-        return null
+
+        const args = (entry?.args ?? {}) as Record<string, unknown>
+        const status = entry?.status as MemoryOpStatus | undefined
+        const retrieved_data = entry?.retrieved_data
+
+        const operation: MemoryOp = {
+          id: typeof entry?.id === "string" ? (entry.id as string) : safeId(),
+          name,
+          args,
+        }
+
+        if (typeof status !== "undefined") {
+          operation.status = status
+        }
+
+        if (typeof retrieved_data !== "undefined") {
+          operation.retrieved_data = retrieved_data
+        }
+
+        return operation
       })
-      .filter((x): x is MemoryOp => x !== null)
+      .filter((item): item is MemoryOp => item !== null)
   } catch {
     return []
   }
@@ -68,8 +96,11 @@ export function ChatInterface() {
   const [busy, setBusy] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const { toast } = useToast()
-
   const [expandedOps, setExpandedOps] = useState<Set<string>>(new Set())
+  const [togglePending, startToggleTransition] = useTransition()
+  const { profile, speakBackEnabled, setSpeakBackEnabledLocal, updateProfile, enqueueSpeech } = useVoiceClone()
+
+  const speakEnabled = useMemo(() => speakBackEnabled && Boolean(profile), [profile, speakBackEnabled])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -77,112 +108,154 @@ export function ChatInterface() {
     }
   }, [log])
 
-  async function send() {
+  const handleSpeakToggle = useCallback(() => {
+    if (!profile) {
+      toast({ title: "No voice sample", description: "Upload a voice sample first." })
+      return
+    }
+
+    startToggleTransition(async () => {
+      const previous = speakBackEnabled
+      setSpeakBackEnabledLocal(!previous)
+      try {
+        const result = await setSpeakBackEnabled(!previous)
+        if (result?.error) {
+          throw new Error(result.error)
+        }
+        updateProfile(result.profile ?? { ...profile, speak_back_enabled: !previous })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        toast({ title: "Unable to update speak-back", description: message, variant: "destructive" })
+        setSpeakBackEnabledLocal(previous)
+      }
+    })
+  }, [profile, setSpeakBackEnabledLocal, speakBackEnabled, toast, updateProfile])
+
+  const send = useCallback(async () => {
     const userText = input.trim()
     if (!userText) return
 
     setInput("")
     setBusy(true)
+    setLog((current) => [...current, { role: "user", text: userText }, { role: "assistant", text: "" }])
 
-    setLog((v) => [...v, { role: "user", text: userText }, { role: "assistant", text: "" }])
-
+    let shouldSpeak = true
     let opsAttached = false
     let opsCache: MemoryOp[] = []
+    let fullAssistantText = ""
 
     try {
-      const r = await fetch("/api/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userText }),
+        body: JSON.stringify({ message: userText, speakBack: speakEnabled }),
       })
 
-      opsCache = decodeOpsFromHeaders(r.headers)
+      opsCache = decodeOpsFromHeaders(response.headers)
 
-      if (!r.ok || !r.body) {
-        const errorMsg = await r.text()
-        setLog((v) => {
-          const copy = [...v]
-          copy[copy.length - 1] = {
-            role: "assistant",
-            text: `Error: ${errorMsg}`,
-            ops: [],
+      if (!response.ok || !response.body) {
+        const errorMsg = await response.text()
+        shouldSpeak = false
+        setLog((current) => {
+          if (current.length === 0) return current
+          const next = [...current]
+          const last = next[next.length - 1]
+          if (last?.role === "assistant") {
+            next[next.length - 1] = { role: "assistant", text: `Error: ${errorMsg}`, ops: [] }
           }
-          return copy
+          return next
         })
-        toast({
-          title: "Error",
-          description: errorMsg,
-          variant: "destructive",
-        })
+        toast({ title: "Error", description: errorMsg || "Request failed", variant: "destructive" })
         setBusy(false)
         return
       }
 
-      const reader = r.body.getReader()
+      const reader = response.body.getReader()
       const decoder = new TextDecoder()
 
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
-        if (value) {
-          const chunk = decoder.decode(value)
+        if (!value || value.length === 0) continue
 
-          setLog((v) => {
-            const copy = [...v]
-            const last = copy[copy.length - 1]
-            const withOps = opsAttached ? last.ops : opsCache
-            opsAttached = true
-            copy[copy.length - 1] = {
-              role: "assistant",
-              text: last.text + chunk,
-              ops: withOps,
-            }
-            return copy
-          })
-        }
+        const chunk = decoder.decode(value)
+        fullAssistantText += chunk
+
+        setLog((current) => {
+          if (current.length === 0) return current
+          const next = [...current]
+          const last = next[next.length - 1]
+          if (!last || last.role !== "assistant") {
+            return next
+          }
+          const opsForMessage = opsAttached ? last.ops : opsCache
+          opsAttached = true
+          next[next.length - 1] = {
+            role: "assistant",
+            text: (last.text ?? "") + chunk,
+            ops: opsForMessage,
+          }
+          return next
+        })
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setLog((v) => {
-        const copy = [...v]
-        copy[copy.length - 1] = {
-          role: "assistant",
-          text: `Error: ${msg}`,
-          ops: [],
+    } catch (error) {
+      shouldSpeak = false
+      const message = error instanceof Error ? error.message : String(error)
+      setLog((current) => {
+        if (current.length === 0) return current
+        const next = [...current]
+        const last = next[next.length - 1]
+        if (last?.role === "assistant") {
+          next[next.length - 1] = { role: "assistant", text: `Error: ${message}`, ops: [] }
         }
-        return copy
+        return next
       })
-      toast({
-        title: "Error",
-        description: msg,
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: message, variant: "destructive" })
     } finally {
       setBusy(false)
+
+      if (!opsAttached && opsCache.length > 0) {
+        setLog((current) => {
+          if (current.length === 0) return current
+          const next = [...current]
+          const last = next[next.length - 1]
+          if (last?.role === "assistant") {
+            next[next.length - 1] = { ...last, ops: opsCache }
+          }
+          return next
+        })
+      }
+
+      if (shouldSpeak && speakEnabled && fullAssistantText.trim()) {
+        void enqueueSpeech(fullAssistantText).catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          toast({ title: "Speak-back failed", description: message, variant: "destructive" })
+        })
+      }
     }
-  }
+  }, [enqueueSpeech, input, speakEnabled, toast])
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto p-4" ref={scrollRef}>
         <div className="mx-auto max-w-3xl space-y-4">
-          {log.map((b, i) => (
-            <div key={i} className={b.role === "user" ? "text-right" : "text-left"}>
+          {log.map((bubble, index) => (
+            <div key={index} className={bubble.role === "user" ? "text-right" : "text-left"}>
               <span
                 className={`inline-block max-w-[85%] whitespace-pre-wrap rounded-lg px-4 py-3 text-sm ${
-                  b.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
+                  bubble.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
                 }`}
               >
-                {b.text || ""}
+                {bubble.text || ""}
               </span>
 
-              {b.role === "assistant" && b.ops && b.ops.length > 0 && (
+              {bubble.role === "assistant" && bubble.ops && bubble.ops.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {b.ops
+                  {[...bubble.ops]
                     .sort((a, b) => {
-                      const aScore = a.retrieved_data?.[0]?.combined_score || a.args.confidence || 0
-                      const bScore = b.retrieved_data?.[0]?.combined_score || b.args.confidence || 0
-                      return bScore - aScore
+                      const aScore = (a.retrieved_data as any)?.[0]?.combined_score || (a.args as any).confidence || 0
+                      const bScore = (b.retrieved_data as any)?.[0]?.combined_score || (b.args as any).confidence || 0
+                      return Number(bScore) - Number(aScore)
                     })
                     .map((op) => {
                       const keyArg = typeof op.args.key === "string" ? op.args.key : undefined
@@ -191,22 +264,24 @@ export function ChatInterface() {
                       const queryArg = typeof op.args.query === "string" ? op.args.query : undefined
                       const isExpanded = expandedOps.has(op.id)
 
+                      const toggleExpanded = () => {
+                        setExpandedOps((prev) => {
+                          const next = new Set(prev)
+                          if (isExpanded) {
+                            next.delete(op.id)
+                          } else {
+                            next.add(op.id)
+                          }
+                          return next
+                        })
+                      }
+
                       if (op.name === "propose_fact" || op.name === "confirm_fact") {
                         return (
                           <div key={op.id} className="w-full">
                             <button
-                              onClick={() => {
-                                setExpandedOps((prev) => {
-                                  const next = new Set(prev)
-                                  if (isExpanded) {
-                                    next.delete(op.id)
-                                  } else {
-                                    next.add(op.id)
-                                  }
-                                  return next
-                                })
-                              }}
-                              className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900"
+                              onClick={toggleExpanded}
+                              className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
                             >
                               <b>{op.name === "propose_fact" ? "Proposed Fact" : "Confirmed Fact"}</b>
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -216,13 +291,13 @@ export function ChatInterface() {
                                 <div className="rounded border border-amber-200 bg-amber-50/50 px-2 py-1 text-xs text-amber-600 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-400">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
-                                      <div className="flex items-center gap-1 mb-0.5">
-                                        <Badge variant="outline" className="text-[10px] h-4 px-1">
+                                      <div className="mb-0.5 flex items-center gap-1">
+                                        <Badge variant="outline" className="h-4 px-1 text-[10px]">
                                           fact
                                         </Badge>
-                                        {op.args.confidence && (
+                                        {typeof (op.args as any).confidence === "number" && (
                                           <span className="text-[10px] text-muted-foreground">
-                                            {(Number(op.args.confidence) * 100).toFixed(0)}%
+                                            {((op.args as any).confidence * 100).toFixed(0)}%
                                           </span>
                                         )}
                                       </div>
@@ -242,18 +317,8 @@ export function ChatInterface() {
                         return (
                           <div key={op.id} className="w-full">
                             <button
-                              onClick={() => {
-                                setExpandedOps((prev) => {
-                                  const next = new Set(prev)
-                                  if (isExpanded) {
-                                    next.delete(op.id)
-                                  } else {
-                                    next.add(op.id)
-                                  }
-                                  return next
-                                })
-                              }}
-                              className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-xs text-teal-700 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900"
+                              onClick={toggleExpanded}
+                              className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-xs text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-400 dark:hover:bg-teal-900"
                             >
                               <b>{op.name === "propose_episodic" ? "Proposed Memory" : "Confirmed Memory"}</b>
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -263,13 +328,13 @@ export function ChatInterface() {
                                 <div className="rounded border border-teal-200 bg-teal-50/50 px-2 py-1 text-xs text-teal-600 dark:border-teal-900 dark:bg-teal-950/50 dark:text-teal-400">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
-                                      <div className="flex items-center gap-1 mb-0.5">
-                                        <Badge variant="outline" className="text-[10px] h-4 px-1">
+                                      <div className="mb-0.5 flex items-center gap-1">
+                                        <Badge variant="outline" className="h-4 px-1 text-[10px]">
                                           episodic
                                         </Badge>
-                                        {op.args.confidence && (
+                                        {typeof (op.args as any).confidence === "number" && (
                                           <span className="text-[10px] text-muted-foreground">
-                                            {(Number(op.args.confidence) * 100).toFixed(0)}%
+                                            {((op.args as any).confidence * 100).toFixed(0)}%
                                           </span>
                                         )}
                                       </div>
@@ -283,49 +348,39 @@ export function ChatInterface() {
                         )
                       }
 
-                      if (op.name === "retrieved_facts" && op.retrieved_data) {
-                        const facts = Array.isArray(op.retrieved_data) ? op.retrieved_data : []
+                      if (op.name === "retrieved_facts" && Array.isArray(op.retrieved_data)) {
+                        const facts = op.retrieved_data as Array<Record<string, any>>
                         const displayCount = isExpanded ? facts.length : 3
 
                         return (
                           <div key={op.id} className="w-full">
                             <button
-                              onClick={() => {
-                                setExpandedOps((prev) => {
-                                  const next = new Set(prev)
-                                  if (isExpanded) {
-                                    next.delete(op.id)
-                                  } else {
-                                    next.add(op.id)
-                                  }
-                                  return next
-                                })
-                              }}
-                              className="inline-flex items-center gap-1 rounded border border-purple-300 bg-purple-50 px-2 py-1 text-xs text-purple-700 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900"
+                              onClick={toggleExpanded}
+                              className="inline-flex items-center gap-1 rounded border border-purple-300 bg-purple-50 px-2 py-1 text-xs text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-400 dark:hover:bg-purple-900"
                             >
                               <b>Remembered</b> • {facts.length} fact(s)
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                             {isExpanded && facts.length > 0 && (
                               <div className="mt-1 space-y-1">
-                                {facts
-                                  .sort((a: any, b: any) => (b.confidence || 0) - (a.confidence || 0))
+                                {[...facts]
+                                  .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))
                                   .slice(0, displayCount)
-                                  .map((fact: any, idx: number) => (
+                                  .map((fact, factIndex) => (
                                     <div
-                                      key={idx}
+                                      key={factIndex}
                                       className="rounded border border-purple-200 bg-purple-50/50 px-2 py-1 text-xs text-purple-600 dark:border-purple-900 dark:bg-purple-950/50 dark:text-purple-400"
                                       title={JSON.stringify(fact)}
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div className="flex-1">
-                                          <div className="flex items-center gap-1 mb-0.5">
-                                            <Badge variant="outline" className="text-[10px] h-4 px-1">
+                                          <div className="mb-0.5 flex items-center gap-1">
+                                            <Badge variant="outline" className="h-4 px-1 text-[10px]">
                                               fact
                                             </Badge>
                                             {fact.confidence && (
                                               <span className="text-[10px] text-muted-foreground">
-                                                {(fact.confidence * 100).toFixed(0)}%
+                                                {(Number(fact.confidence) * 100).toFixed(0)}%
                                               </span>
                                             )}
                                           </div>
@@ -336,18 +391,14 @@ export function ChatInterface() {
                                       </div>
                                     </div>
                                   ))}
-                                {facts.length > 3 && displayCount === 3 && (
+                                {facts.length > 3 && !isExpanded && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="w-full h-6 text-xs"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setExpandedOps((prev) => {
-                                        const next = new Set(prev)
-                                        next.add(op.id)
-                                        return next
-                                      })
+                                    className="h-6 w-full text-xs"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setExpandedOps((prev) => new Set(prev).add(op.id))
                                     }}
                                   >
                                     +{facts.length - 3} more
@@ -359,49 +410,39 @@ export function ChatInterface() {
                         )
                       }
 
-                      if (op.name === "search_memory" && op.retrieved_data) {
-                        const results = Array.isArray(op.retrieved_data) ? op.retrieved_data : []
+                      if (op.name === "search_memory" && Array.isArray(op.retrieved_data)) {
+                        const results = op.retrieved_data as Array<Record<string, any>>
                         const displayCount = isExpanded ? results.length : 3
 
                         return (
                           <div key={op.id} className="w-full">
                             <button
-                              onClick={() => {
-                                setExpandedOps((prev) => {
-                                  const next = new Set(prev)
-                                  if (isExpanded) {
-                                    next.delete(op.id)
-                                  } else {
-                                    next.add(op.id)
-                                  }
-                                  return next
-                                })
-                              }}
-                              className="inline-flex items-center gap-1 rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900"
+                              onClick={toggleExpanded}
+                              className="inline-flex items-center gap-1 rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-900"
                             >
                               <b>Remembered</b> • {results.length} item(s)
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                             {isExpanded && results.length > 0 && (
                               <div className="mt-1 space-y-1">
-                                {results
-                                  .sort((a: any, b: any) => (b.combined_score || 0) - (a.combined_score || 0))
+                                {[...results]
+                                  .sort((a, b) => Number(b.combined_score || 0) - Number(a.combined_score || 0))
                                   .slice(0, displayCount)
-                                  .map((item: any, idx: number) => (
+                                  .map((item, itemIndex) => (
                                     <div
-                                      key={idx}
+                                      key={itemIndex}
                                       className="rounded border border-blue-200 bg-blue-50/50 px-2 py-1 text-xs text-blue-600 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-400"
                                       title={JSON.stringify(item)}
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div className="flex-1">
-                                          <div className="flex items-center gap-1 mb-0.5">
-                                            <Badge variant="outline" className="text-[10px] h-4 px-1">
+                                          <div className="mb-0.5 flex items-center gap-1">
+                                            <Badge variant="outline" className="h-4 px-1 text-[10px]">
                                               {item.source}
                                             </Badge>
                                             {item.combined_score && (
                                               <span className="text-[10px] text-muted-foreground">
-                                                {(item.combined_score * 100).toFixed(0)}%
+                                                {(Number(item.combined_score) * 100).toFixed(0)}%
                                               </span>
                                             )}
                                           </div>
@@ -410,18 +451,14 @@ export function ChatInterface() {
                                       </div>
                                     </div>
                                   ))}
-                                {results.length > 3 && displayCount === 3 && (
+                                {results.length > 3 && !isExpanded && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="w-full h-6 text-xs"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setExpandedOps((prev) => {
-                                        const next = new Set(prev)
-                                        next.add(op.id)
-                                        return next
-                                      })
+                                    className="h-6 w-full text-xs"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setExpandedOps((prev) => new Set(prev).add(op.id))
                                     }}
                                   >
                                     +{results.length - 3} more
@@ -437,8 +474,8 @@ export function ChatInterface() {
                         op.status === "error"
                           ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"
                           : op.status === "ignored"
-                            ? "border-gray-300 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
-                            : "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400"
+                              ? "border-gray-300 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
+                              : "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400"
 
                       return (
                         <span
@@ -460,24 +497,43 @@ export function ChatInterface() {
         </div>
       </div>
 
-      <div className="border-t p-4 flex-shrink-0">
+      <div className="flex-shrink-0 border-t p-4">
         <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            send()
+          onSubmit={(event) => {
+            event.preventDefault()
+            void send()
           }}
           className="mx-auto flex max-w-3xl gap-2"
         >
+          <Button
+            type="button"
+            variant={speakEnabled ? "default" : "outline"}
+            onClick={handleSpeakToggle}
+            disabled={togglePending || !profile}
+            className="gap-2"
+          >
+            {togglePending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : speakEnabled ? (
+              <>
+                <Volume2 className="h-4 w-4" /> Speak
+              </>
+            ) : (
+              <>
+                <VolumeX className="h-4 w-4" /> Muted
+              </>
+            )}
+          </Button>
           <Input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(event) => setInput(event.target.value)}
             placeholder="Type a message..."
             disabled={busy}
             className="flex-1"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault()
-                send()
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault()
+                void send()
               }
             }}
           />
@@ -486,6 +542,8 @@ export function ChatInterface() {
           </Button>
         </form>
       </div>
+      <AudioProgressBar />
     </div>
   )
 }
+

@@ -23,24 +23,32 @@ export default async function HomePage() {
         initialMemories={[]}
         initialDocuments={[]}
         initialRules={[]}
+        initialVoiceProfile={null}
       />
     )
   }
 
   await sweepExpiredFacts()
 
-  const [factsResult, memoriesResult, documentsResult, graphDataResult, rulesResult] = await Promise.all([
+  const [factsResult, memoriesResult, documentsResult, graphDataResult, rulesResult, voiceProfileResult] =
+    await Promise.all([
     getCurrentFacts(),
     getEpisodicMemories(),
     getDocuments(),
     getMemoryGraphData(),
     getProceduralRules(),
-  ])
+      supabase
+        .from("voice_profile")
+        .select("user_id, sample_object_path, sample_mime_type, clone_reference, speak_back_enabled, created_at, updated_at")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ])
 
   const facts = factsResult.facts || []
   const memories = memoriesResult.memories || []
   const documents = documentsResult.documents || []
   const rules = rulesResult.rules || []
+  const voiceProfile = voiceProfileResult.data || null
 
   // Use graph data with embeddings for 3D visualization if available
   const graphFacts = graphDataResult.facts || facts
@@ -54,6 +62,7 @@ export default async function HomePage() {
       initialMemories={graphMemories}
       initialDocuments={graphDocuments}
       initialRules={rules}
+      initialVoiceProfile={voiceProfile}
     />
   )
 }
