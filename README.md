@@ -22,6 +22,7 @@ Digital Twin is a Next.js application that uses advanced AI and memory systems t
 - **Language**: TypeScript
 - **Database**: Supabase (PostgreSQL)
 - **AI**: OpenAI GPT-4 via AI SDK
+- **Voice Cloning**: Coqui AI TTS (XTTS-v2, self-hosted)
 - **Authentication**: Supabase Auth
 - **Styling**: Tailwind CSS v4
 - **UI Components**: Radix UI + shadcn/ui
@@ -30,8 +31,10 @@ Digital Twin is a Next.js application that uses advanced AI and memory systems t
 
 - Node.js 18+ 
 - npm, pnpm, or yarn
+- Python 3.9+ (for voice cloning)
 - A Supabase account and project
 - An OpenAI API key
+- CUDA GPU (optional, for faster voice synthesis)
 
 ## Getting Started
 
@@ -56,7 +59,7 @@ yarn install
 
 Create a `.env.local` file in the root directory:
 
-\`\`\`env
+```env
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -65,9 +68,12 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key
 
+# Coqui TTS Server
+COQUI_API_URL=http://localhost:8000
+
 # Development Configuration
 NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=http://localhost:3000
-\`\`\`
+```
 
 ### 4. Set Up the Database
 
@@ -78,9 +84,14 @@ Run the SQL migration scripts in your Supabase SQL Editor in order:
 3. Execute each script in the `scripts/` folder sequentially:
    - `015_create_procedural_rules.sql`
    - `016_create_increment_rule_observation_function.sql`
+   - `017_create_voice_profile_table.sql`
    - (and any other numbered scripts in order)
 
 These scripts will create all necessary tables, functions, and indexes.
+
+### 4a. Prepare Supabase Storage
+
+Create a private storage bucket named `voice-profiles`. This bucket stores encrypted voice samples and should only be readable by authenticated users.
 
 ### 5. Run the Development Server
 
@@ -129,23 +140,100 @@ Fine-tune how your digital twin communicates:
 - **Vocabulary Level**: Simple, moderate, advanced, technical
 - **Auto-Analysis**: Extract style from existing memories
 
+### Voice Cloning (Coqui AI TTS)
+
+Digital Twin includes self-hosted voice cloning using Coqui AI's XTTS-v2 model. Your AI responses can be spoken back in your own voice with no subscription fees.
+
+#### Prerequisites
+
+- **Python 3.9+** (3.10 recommended)
+- **FFmpeg** for audio conversion
+  ```bash
+  # Ubuntu/Debian
+  sudo apt-get install ffmpeg
+  
+  # macOS
+  brew install ffmpeg
+  ```
+- **CUDA GPU** (optional, for faster synthesis - CPU works fine)
+
+#### Setup
+
+1. **Install Python dependencies**:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+   First run downloads the ~1.8GB XTTS-v2 model to `~/.local/share/tts/`
+
+2. **Start the Coqui TTS server**:
+
+   ```bash
+   ./start-tts.sh
+   # or manually:
+   python tts_server.py
+   ```
+
+   Server runs on http://localhost:8000 (check with `curl http://localhost:8000/health`)
+
+3. **Start Next.js** (in separate terminal):
+
+   ```bash
+   pnpm dev
+   ```
+
+4. **Enroll your voice**:
+   - Open the app at http://localhost:3000
+   - Go to **Voice Settings** tab
+   - Upload a 6-30 second audio sample (clear speech, no background noise)
+   - Supported formats: MP3, WAV, WebM, OGG
+   - Click **Save Voice Profile**
+
+5. **Enable speak-back**:
+   - Toggle **"Speak back messages"** in Voice Settings
+   - Send a message in the chat
+   - AI responses will play in your cloned voice with progress bar
+
+#### Voice Cloning Features
+
+- **Multilingual**: Supports 17 languages (EN, ES, FR, DE, IT, PT, etc.)
+- **Automatic chunking**: Long text split into sentences for seamless playback
+- **Progress tracking**: Visual progress bar shows playback position
+- **Zero cost**: Completely self-hosted, no API fees
+- **GPU acceleration**: Optional CUDA support for 2-4x faster synthesis
+
+#### Troubleshooting
+
+See `COQUI_SETUP.md` for detailed troubleshooting:
+- Server startup issues
+- Audio format errors
+- Performance optimization
+- Production deployment tips
+
 ## Project Structure
 
-\`\`\`
+```
 digitaltwin-frontend/
 ├── app/
 │   ├── actions/          # Server actions
 │   │   ├── auth.ts       # Authentication actions
 │   │   ├── memory.ts     # Memory management
 │   │   ├── procedural-rules.ts
-│   │   └── style.ts      # Communication style
+│   │   ├── style.ts      # Communication style
+│   │   └── voice.ts      # Voice profile management
 │   ├── api/
-│   │   └── chat/         # Chat API endpoint
+│   │   ├── chat/         # Chat API endpoint
+│   │   ├── coqui/        # Coqui TTS endpoints
+│   │   └── voice/        # Voice enrollment
 │   ├── globals.css       # Global styles
 │   ├── layout.tsx        # Root layout
 │   └── page.tsx          # Main page
 ├── components/
 │   ├── chat-interface.tsx
+│   ├── voice-clone-provider.tsx  # Voice cloning context
+│   ├── voice-settings-panel.tsx  # Voice configuration UI
+│   ├── audio-progress-bar.tsx    # Playback progress
 │   ├── debug-facts-panel.tsx
 │   ├── procedural-rules-panel.tsx
 │   ├── single-page-app.tsx
@@ -153,10 +241,14 @@ digitaltwin-frontend/
 │   └── ui/               # shadcn/ui components
 ├── lib/
 │   ├── supabase/         # Supabase client utilities
-│   └── temporal-parser.ts # Date/time parsing
+│   ├── temporal-parser.ts # Date/time parsing
+│   └── voice-clone.ts    # Voice cloning utilities
 ├── scripts/              # Database migration scripts
+├── tts_server.py         # Coqui TTS FastAPI server
+├── requirements.txt      # Python dependencies
+├── start-tts.sh          # TTS server startup script
 └── public/               # Static assets
-\`\`\`
+```
 
 ## Key Concepts
 
@@ -189,38 +281,3 @@ Your digital twin learns to communicate like you by analyzing:
 - Humor and personality markers
 - Common phrases and expressions
 
-## Development
-
-### Build for Production
-
-\`\`\`bash
-npm run build
-npm start
-\`\`\`
-
-### Linting
-
-\`\`\`bash
-npm run lint
-\`\`\`
-
-## Deployment
-
-This project is optimized for deployment on Vercel:
-
-1. Push your code to GitHub
-2. Import the repository in Vercel
-3. Add environment variables in Vercel project settings
-4. Deploy
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-[Your License Here]
-
-## Support
-
-For issues and questions, please open an issue on GitHub.

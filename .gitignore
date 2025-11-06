@@ -30,3 +30,20 @@ next-env.d.ts
 .venv/
 face_demo/static/generated/**
 __pycache__/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.pytype/
+.hypothesis/
