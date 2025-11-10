@@ -28,8 +28,10 @@ next-env.d.ts
 
 #face_demo_related
 .venv/
-face_demo/static/generated/**
-__pycache__/
+backend/static/generated/**
+
+#tts
+.tts_cache/
 # Python
 __pycache__/
 *.py[cod]

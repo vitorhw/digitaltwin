@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { setSpeakBackEnabled } from "@/app/actions/voice"
 import { useVoiceClone } from "@/components/voice-clone-provider"
+import { useAvatar } from "@/components/avatar-context"
 import { AudioProgressBar } from "@/components/audio-progress-bar"
 
 type Role = "user" | "assistant"
@@ -99,8 +100,11 @@ export function ChatInterface() {
   const [expandedOps, setExpandedOps] = useState<Set<string>>(new Set())
   const [togglePending, startToggleTransition] = useTransition()
   const { profile, speakBackEnabled, setSpeakBackEnabledLocal, updateProfile, enqueueSpeech } = useVoiceClone()
+  const { avatarState, setAudioUrl } = useAvatar()
 
   const speakEnabled = useMemo(() => speakBackEnabled && Boolean(profile), [profile, speakBackEnabled])
+  const hasAvatar = Boolean(avatarState.meshData)
+  const cloneVoiceId = profile?.clone_reference?.voice_id ?? null
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -226,14 +230,75 @@ export function ChatInterface() {
         })
       }
 
-      if (shouldSpeak && speakEnabled && fullAssistantText.trim()) {
-        void enqueueSpeech(fullAssistantText).catch((error) => {
-          const message = error instanceof Error ? error.message : String(error)
-          toast({ title: "Speak-back failed", description: message, variant: "destructive" })
-        })
+      if (shouldSpeak && fullAssistantText.trim()) {
+        // If avatar is available, use the local avatar backend TTS; otherwise use Coqui TTS
+        if (hasAvatar) {
+          let voiceForAvatar: string | null = null
+
+          if (avatarState.voice === "coqui") {
+            if (cloneVoiceId) {
+              voiceForAvatar = `coqui:${cloneVoiceId}`
+            } else {
+              toast({
+                title: "No cloned voice",
+                description: "Please enroll a cloned voice in Voice settings before selecting the Coqui voice.",
+                variant: "destructive",
+              })
+            }
+          } else if (avatarState.voice) {
+            voiceForAvatar = avatarState.voice
+          }
+
+          if (voiceForAvatar) {
+            try {
+              // Use the chat response text directly for TTS
+              const response = await fetch("/api/face-avatar/tts", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  text: fullAssistantText,
+                  voice: voiceForAvatar,
+                }),
+              })
+
+              const data = await response.json()
+              console.log("[Avatar] TTS response:", data)
+              if (data.ok && data.audio) {
+                // Build audio URL - handle both /static/... and static/... formats
+                let audioPath = data.audio
+                if (audioPath.startsWith("/static/")) {
+                  audioPath = audioPath.replace("/static/", "")
+                } else if (audioPath.startsWith("static/")) {
+                  audioPath = audioPath.replace("static/", "")
+                }
+                const audioUrl = `/api/face-avatar/static/${audioPath}?t=${Date.now()}`
+                console.log("[Avatar] Setting audio URL:", audioUrl, "(from:", data.audio, ")")
+                setAudioUrl(audioUrl)
+              } else {
+                console.error("[Avatar] TTS response not ok:", data)
+              }
+            } catch (error) {
+              console.error("[Avatar] TTS failed:", error)
+              // Fallback to Coqui if avatar TTS fails
+              if (speakEnabled) {
+                void enqueueSpeech(fullAssistantText).catch((error) => {
+                  const message = error instanceof Error ? error.message : String(error)
+                  toast({ title: "Speak-back failed", description: message, variant: "destructive" })
+                })
+              }
+            }
+          }
+        } else if (speakEnabled) {
+          void enqueueSpeech(fullAssistantText).catch((error) => {
+            const message = error instanceof Error ? error.message : String(error)
+            toast({ title: "Speak-back failed", description: message, variant: "destructive" })
+          })
+        }
       }
     }
-  }, [enqueueSpeech, input, speakEnabled, toast])
+  }, [enqueueSpeech, input, speakEnabled, toast, hasAvatar, avatarState.voice, setAudioUrl, cloneVoiceId])
 
   return (
     <div className="flex h-full flex-col">

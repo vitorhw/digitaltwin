@@ -10,6 +10,9 @@ import { StyleConfigPanel } from "@/components/style-config-panel"
 import { ProceduralRulesPanel } from "@/components/procedural-rules-panel"
 import { VoiceSettingsPanel } from "@/components/voice-settings-panel"
 import { CoquiConsole } from "@/components/coqui-console"
+import { FaceAvatarPanel } from "@/components/face-avatar-panel"
+import { DraggableAvatar } from "@/components/draggable-avatar"
+import { AvatarProvider, useAvatar } from "@/components/avatar-context"
 import { VoiceCloneProvider, useVoiceClone } from "@/components/voice-clone-provider"
 import { createClient as createSupabaseClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -109,13 +112,15 @@ export function SinglePageApp({
 
   return (
     <VoiceCloneProvider initialProfile={initialVoiceProfile}>
-      <AuthenticatedApp
-        initialFacts={initialFacts}
-        initialMemories={initialMemories}
-        initialDocuments={initialDocuments}
-        initialRules={initialRules}
-        onSignOut={handleSignOut}
-      />
+      <AvatarProvider>
+        <AuthenticatedApp
+          initialFacts={initialFacts}
+          initialMemories={initialMemories}
+          initialDocuments={initialDocuments}
+          initialRules={initialRules}
+          onSignOut={handleSignOut}
+        />
+      </AvatarProvider>
     </VoiceCloneProvider>
   )
 }
@@ -152,7 +157,8 @@ function AuthenticatedApp({
   )
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col bg-background relative">
+      <AvatarDisplay />
       <div className="flex-shrink-0 border-b px-4 py-2 flex items-center justify-end">
         <Button variant="ghost" size="sm" onClick={onSignOut} className="gap-2">
           <LogOut className="h-4 w-4" />
@@ -185,6 +191,9 @@ function AuthenticatedApp({
               <TabsTrigger value="voice" className="flex-1">
                 Voice
               </TabsTrigger>
+              <TabsTrigger value="avatar" className="flex-1">
+                Avatar
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="debug" className="flex-1 overflow-hidden min-h-0 m-0">
               <DebugFactsPanel
@@ -209,9 +218,30 @@ function AuthenticatedApp({
                 </div>
               </div>
             </TabsContent>
+            <TabsContent value="avatar" className="flex-1 overflow-hidden min-h-0 m-0">
+              <FaceAvatarPanel />
+            </TabsContent>
           </Tabs>
         </div>
       </div>
     </div>
+  )
+}
+
+function AvatarDisplay() {
+  const { avatarState, setPosition } = useAvatar()
+
+  if (!avatarState.meshData) {
+    return null
+  }
+
+  return (
+    <DraggableAvatar
+      meshData={avatarState.meshData}
+      features={avatarState.features}
+      textureUrl={avatarState.textureUrl}
+      audioUrl={avatarState.audioUrl}
+      onPositionChange={setPosition}
+    />
   )
 }
