@@ -230,6 +230,7 @@ function AuthenticatedApp({
 
 function AvatarDisplay() {
   const { avatarState, setPosition } = useAvatar()
+  const { voiceStyle } = useVoiceClone()
 
   if (!avatarState.meshData) {
     return null
@@ -242,6 +243,7 @@ function AvatarDisplay() {
       textureUrl={avatarState.textureUrl}
       audioUrl={avatarState.audioUrl}
       onPositionChange={setPosition}
+      styleMode={voiceStyle}
     />
   )
 }

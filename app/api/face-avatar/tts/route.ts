@@ -5,7 +5,7 @@ const FACE_AVATAR_API_URL = process.env.FACE_AVATAR_API_URL || "http://localhost
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { text, voice } = body
+    const { text, voice, style } = body
     
     if (!text || typeof text !== "string") {
       return NextResponse.json(
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text, voice: voice || null }),
+      body: JSON.stringify({ text, voice: voice || null, style: style || null }),
     }).catch((fetchError) => {
       console.error("[face-avatar] Fetch error:", fetchError)
       throw new Error(

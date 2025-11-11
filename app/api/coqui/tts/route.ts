@@ -13,7 +13,7 @@ if (typeof process !== "undefined" && process.env) {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { text, voice_id, language = "en" } = body
+    const { text, voice_id, language = "en", style } = body
 
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Text is required" }, { status: 400 })
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     const response = await fetch(`${COQUI_API_URL}/api/coqui/synthesize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice_id, language }),
+      body: JSON.stringify({ text, voice_id, language, style: style || null }),
     }).catch((fetchError) => {
       console.error("[coqui] Fetch error:", fetchError)
       const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError)

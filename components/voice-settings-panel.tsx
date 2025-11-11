@@ -9,7 +9,8 @@ import { deleteVoiceProfile, setSpeakBackEnabled } from "@/app/actions/voice"
 import { useVoiceClone } from "@/components/voice-clone-provider"
 export function VoiceSettingsPanel() {
   const { toast } = useToast()
-  const { profile, speakBackEnabled, updateProfile, setSpeakBackEnabledLocal } = useVoiceClone()
+  const { profile, speakBackEnabled, updateProfile, setSpeakBackEnabledLocal, voiceStyle, setVoiceStyle } =
+    useVoiceClone()
   const [recording, setRecording] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [duration, setDuration] = useState(0)
@@ -234,6 +235,28 @@ export function VoiceSettingsPanel() {
             )}
           </Button>
         </div>
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium">Voice Filter</h3>
+        <p className="text-xs text-muted-foreground">
+          Flip the broadcast into a glitchy Matrix feed. Toggle to step behind the green code curtain.
+        </p>
+        <Button
+          variant={voiceStyle === "90s_tv" ? "default" : "outline"}
+          onClick={() => setVoiceStyle(voiceStyle === "90s_tv" ? "none" : "90s_tv")}
+          className="w-fit gap-2"
+        >
+          {voiceStyle === "90s_tv" ? (
+            <>
+              <Volume2 className="h-4 w-4" /> Filter: 90s TV (On)
+            </>
+          ) : (
+            <>
+              <VolumeX className="h-4 w-4" /> Filter: Off
+            </>
+          )}
+        </Button>
       </section>
 
       {profile && (

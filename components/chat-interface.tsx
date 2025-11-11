@@ -99,7 +99,8 @@ export function ChatInterface() {
   const { toast } = useToast()
   const [expandedOps, setExpandedOps] = useState<Set<string>>(new Set())
   const [togglePending, startToggleTransition] = useTransition()
-  const { profile, speakBackEnabled, setSpeakBackEnabledLocal, updateProfile, enqueueSpeech } = useVoiceClone()
+  const { profile, speakBackEnabled, setSpeakBackEnabledLocal, updateProfile, enqueueSpeech, voiceStyle } =
+    useVoiceClone()
   const { avatarState, setAudioUrl } = useAvatar()
 
   const speakEnabled = useMemo(() => speakBackEnabled && Boolean(profile), [profile, speakBackEnabled])
@@ -252,15 +253,23 @@ export function ChatInterface() {
           if (voiceForAvatar) {
             try {
               // Use the chat response text directly for TTS
+              const payload: {
+                text: string
+                voice: string | null
+                style?: string
+              } = {
+                text: fullAssistantText,
+                voice: voiceForAvatar,
+              }
+              if (voiceStyle && voiceStyle !== "none") {
+                payload.style = voiceStyle
+              }
               const response = await fetch("/api/face-avatar/tts", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({
-                  text: fullAssistantText,
-                  voice: voiceForAvatar,
-                }),
+                body: JSON.stringify(payload),
               })
 
               const data = await response.json()
@@ -298,7 +307,7 @@ export function ChatInterface() {
         }
       }
     }
-  }, [enqueueSpeech, input, speakEnabled, toast, hasAvatar, avatarState.voice, setAudioUrl, cloneVoiceId])
+  }, [enqueueSpeech, input, speakEnabled, toast, hasAvatar, avatarState.voice, setAudioUrl, cloneVoiceId, voiceStyle])
 
   return (
     <div className="flex h-full flex-col">

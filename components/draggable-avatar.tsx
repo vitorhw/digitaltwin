@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { GripVertical } from "lucide-react"
+import type { VoiceFilterStyle } from "@/components/voice-clone-provider"
 
 interface MeshData {
   vertices: number[][]
@@ -23,6 +24,7 @@ interface DraggableAvatarProps {
   textureUrl: string | null
   audioUrl: string | null
   onPositionChange?: (x: number, y: number) => void
+  styleMode?: VoiceFilterStyle
 }
 
 export function DraggableAvatar({
@@ -31,6 +33,7 @@ export function DraggableAvatar({
   textureUrl,
   audioUrl,
   onPositionChange,
+  styleMode = "none",
 }: DraggableAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -403,13 +406,55 @@ export function DraggableAvatar({
     return null
   }
 
+  const isCRT = styleMode === "90s_tv"
+
+  const crtOverlay = useMemo(() => {
+    if (!isCRT) return null
+    return (
+      <>
+        <div
+          className="pointer-events-none absolute inset-0 opacity-30 mix-blend-screen"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(to bottom, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 2px, transparent 2px, transparent 4px)",
+          }}
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.18]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.08), transparent 45%), radial-gradient(circle at 80% 30%, rgba(255,255,255,0.05), transparent 40%), radial-gradient(circle at 50% 80%, rgba(255,255,255,0.04), transparent 50%)",
+            mixBlendMode: "screen",
+          }}
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-20"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(45deg, rgba(0,0,0,0.08) 0, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 3px)",
+            animation: "crt-noise 1.5s steps(4, end) infinite",
+          }}
+        />
+      </>
+    )
+  }, [isCRT])
+
+  const canvasMask =
+    "radial-gradient(circle at center, rgba(0,0,0,1) 45%, rgba(0,0,0,0.7) 62%, rgba(0,0,0,0.2) 74%, rgba(0,0,0,0) 88%)"
+  const canvasFilter = isCRT
+    ? "grayscale(0.15) contrast(1.6) brightness(0.8) hue-rotate(110deg) saturate(1.4)"
+    : "contrast(1.05) brightness(0.95)"
+
   return (
     <div
       ref={containerRef}
-      className="fixed z-50 w-64 h-64 rounded-lg border-2 border-primary/20 bg-background/80 backdrop-blur-sm shadow-lg cursor-move"
+      className={`fixed z-50 w-64 h-64 overflow-hidden rounded-lg border-2 shadow-lg cursor-move bg-black ${
+        isCRT ? "border-emerald-500/60 shadow-[0_0_25px_rgba(0,255,120,0.35)]" : "border-primary/30"
+      }`}
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
+        boxShadow: isCRT ? "0 0 40px rgba(0,150,80,0.45), inset 0 0 25px rgba(0,120,60,0.4)" : undefined,
       }}
       onMouseDown={handleMouseDown}
     >
@@ -420,12 +465,72 @@ export function DraggableAvatar({
         <GripVertical className="h-4 w-4" />
         <span className="text-xs">Avatar</span>
       </div>
+      {crtOverlay}
       <canvas
         ref={canvasRef}
-        className="w-full h-full"
-        style={{ display: "block" }}
+        className={`relative z-10 h-full w-full ${isCRT ? "mix-blend-screen" : ""}`}
+        style={{
+          display: "block",
+          WebkitMaskImage: canvasMask,
+          maskImage: canvasMask,
+          filter: canvasFilter,
+        }}
       />
+      <div
+        className="pointer-events-none absolute inset-0 z-20"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.25) 75%, rgba(0,0,0,0.65) 100%)",
+          mixBlendMode: isCRT ? "screen" : "multiply",
+        }}
+      />
+      {isCRT && (
+        <div
+          className="pointer-events-none absolute inset-0 z-30 opacity-70 mix-blend-screen"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(to bottom, rgba(90,255,150,0.22) 0px, rgba(90,255,150,0.22) 1px, rgba(0,0,0,0.7) 1px, rgba(0,0,0,0.7) 3px)",
+          }}
+        />
+      )}
+      {isCRT && (
+        <div
+          className="pointer-events-none absolute inset-0 z-35 opacity-40 mix-blend-screen"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(90deg, rgba(0,255,140,0.06) 0px, rgba(0,255,140,0.06) 2px, transparent 2px, transparent 6px)",
+          }}
+        />
+      )}
+      {isCRT && (
+        <div
+          className="pointer-events-none absolute inset-0 z-40 opacity-55"
+          style={{
+            background:
+              "radial-gradient(circle at center, rgba(40,220,120,0.08) 0%, rgba(0,120,70,0.35) 55%, rgba(0,40,20,0.85) 100%)",
+            borderRadius: "12px",
+            border: "1px solid rgba(30,200,120,0.45)",
+            boxShadow: "inset 0 0 35px rgba(30,200,120,0.35)",
+          }}
+        />
+      )}
     </div>
   )
+}
+
+// Keyframes for CRT noise animation (injected once)
+if (typeof document !== "undefined" && !document.getElementById("crt-noise-keyframes")) {
+  const styleEl = document.createElement("style")
+  styleEl.id = "crt-noise-keyframes"
+  styleEl.textContent = `
+    @keyframes crt-noise {
+      0% { background-position: 0 0; }
+      25% { background-position: 10px -10px; }
+      50% { background-position: -10px 10px; }
+      75% { background-position: 15px 5px; }
+      100% { background-position: 0 0; }
+    }
+  `
+  document.head.appendChild(styleEl)
 }
 
