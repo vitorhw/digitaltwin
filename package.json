@@ -44,9 +44,11 @@
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "@vercel/analytics": "latest",
+    "@xyflow/react": "^12.9.2",
     "ai": "5.0.76",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
+    "classcat": "^5.0.5",
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
     "date-fns": "4.1.0",
@@ -57,6 +59,7 @@
     "expo-gl": "latest",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
+    "nanoid": "^5.1.6",
     "next": "15.5.6",
     "next-themes": "latest",
     "openai": "latest",
@@ -66,6 +69,7 @@
     "react-hook-form": "^7.60.0",
     "react-native": "latest",
     "react-resizable-panels": "^2.1.7",
+    "reactflow": "^11.11.4",
     "recharts": "2.15.4",
     "server-only": "latest",
     "sonner": "^1.7.4",
@@ -74,7 +78,8 @@
     "three": "latest",
     "vaul": "^1.1.2",
     "ws": "latest",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
