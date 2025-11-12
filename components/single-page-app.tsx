@@ -11,6 +11,7 @@ import { ProceduralRulesPanel } from "@/components/procedural-rules-panel"
 import { VoiceSettingsPanel } from "@/components/voice-settings-panel"
 import { CoquiConsole } from "@/components/coqui-console"
 import { VoiceCloneProvider, useVoiceClone } from "@/components/voice-clone-provider"
+import FlowWithProvider from "@/components/mindmap-panel"
 import { createClient as createSupabaseClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -185,6 +186,9 @@ function AuthenticatedApp({
               <TabsTrigger value="voice" className="flex-1">
                 Voice
               </TabsTrigger>
+              <TabsTrigger value="mindmap" className="flex-1">
+                Mind Map
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="debug" className="flex-1 overflow-hidden min-h-0 m-0">
               <DebugFactsPanel
@@ -208,6 +212,9 @@ function AuthenticatedApp({
                   <CoquiConsole />
                 </div>
               </div>
+            </TabsContent>
+            <TabsContent value="mindmap" className="flex-1 overflow-hidden min-h-0 m-0">
+              <FlowWithProvider />
             </TabsContent>
           </Tabs>
         </div>
