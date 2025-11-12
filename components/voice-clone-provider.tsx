@@ -4,6 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from "react"
 import type { VoiceProfile } from "@/app/actions/voice"
 
+export type VoiceFilterStyle = "none" | "90s_tv"
+
 interface CloneReference {
   voice_id: string
 }
@@ -20,11 +22,14 @@ interface VoiceCloneContextValue {
   setSpeakBackEnabledLocal: (enabled: boolean) => void
   enqueueSpeech: (text: string, options?: { force?: boolean }) => Promise<void>
   stopPlayback: () => void
+  voiceStyle: VoiceFilterStyle
+  setVoiceStyle: (style: VoiceFilterStyle) => void
 }
 
 const VoiceCloneContext = createContext<VoiceCloneContextValue | undefined>(undefined)
 
 const STORAGE_KEY = "voice-clone-reference"
+const STYLE_STORAGE_KEY = "voice-filter-style"
 
 function encodeCloneReference(ref: CloneReference | null) {
   if (typeof window === "undefined") return
@@ -68,6 +73,7 @@ export function VoiceCloneProvider({
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackProgress, setPlaybackProgress] = useState(0)
   const [playbackDuration, setPlaybackDuration] = useState(0)
+  const [voiceStyle, setVoiceStyle] = useState<VoiceFilterStyle>("none")
 
   const audioElementRef = useRef<HTMLAudioElement | null>(null)
   const synthesisQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -86,6 +92,27 @@ export function VoiceCloneProvider({
   useEffect(() => {
     encodeCloneReference(cloneReference)
   }, [cloneReference])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      const stored = window.localStorage.getItem(STYLE_STORAGE_KEY)
+      if (stored === "90s_tv" || stored === "none") {
+        setVoiceStyle(stored)
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(STYLE_STORAGE_KEY, voiceStyle)
+    } catch {
+      // ignore storage errors
+    }
+  }, [voiceStyle])
 
   const stopPlayback = useCallback(() => {
     if (progressIntervalRef.current) {
@@ -111,10 +138,18 @@ export function VoiceCloneProvider({
       
       console.log("[Voice] Starting synthesis with voice_id:", cloneReference.voice_id)
       
-      const payload = {
+      const payload: {
+        text: string
+        voice_id: string
+        language: string
+        style?: VoiceFilterStyle
+      } = {
         text,
         voice_id: cloneReference.voice_id,
         language: "en",
+      }
+      if (voiceStyle !== "none") {
+        payload.style = voiceStyle
       }
 
       const response = await fetch("/api/coqui/tts", {
@@ -228,7 +263,7 @@ export function VoiceCloneProvider({
         audio.addEventListener("error", handleError)
       })
     },
-    [cloneReference],
+    [cloneReference, voiceStyle],
   )
 
   const enqueueSpeech = useCallback(
@@ -303,6 +338,8 @@ export function VoiceCloneProvider({
       setSpeakBackEnabledLocal,
       enqueueSpeech,
       stopPlayback,
+      voiceStyle,
+      setVoiceStyle,
     }),
     [
       profile,
@@ -316,6 +353,8 @@ export function VoiceCloneProvider({
       setSpeakBackEnabledLocal,
       enqueueSpeech,
       stopPlayback,
+      voiceStyle,
+      setVoiceStyle,
     ],
   )
 

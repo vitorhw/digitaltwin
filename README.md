@@ -29,7 +29,7 @@ Digital Twin is a Next.js application that uses advanced AI and memory systems t
 
 ## Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm, pnpm, or yarn
 - Python 3.9+ (for voice cloning)
 - A Supabase account and project
@@ -49,9 +49,13 @@ cd digitaltwin-frontend
 
 \`\`\`bash
 npm install
+
 # or
+
 pnpm install
+
 # or
+
 yarn install
 \`\`\`
 
@@ -97,9 +101,13 @@ Create a private storage bucket named `voice-profiles`. This bucket stores encry
 
 \`\`\`bash
 npm run dev
+
 # or
+
 pnpm dev
+
 # or
+
 yarn dev
 \`\`\`
 
@@ -148,13 +156,15 @@ Digital Twin includes self-hosted voice cloning using Coqui AI's XTTS-v2 model. 
 
 - **Python 3.9+** (3.10 recommended)
 - **FFmpeg** for audio conversion
+
   ```bash
   # Ubuntu/Debian
   sudo apt-get install ffmpeg
-  
+
   # macOS
   brew install ffmpeg
   ```
+
 - **CUDA GPU** (optional, for faster synthesis - CPU works fine)
 
 #### Setup
@@ -184,6 +194,7 @@ Digital Twin includes self-hosted voice cloning using Coqui AI's XTTS-v2 model. 
    ```
 
 4. **Enroll your voice**:
+
    - Open the app at http://localhost:3000
    - Go to **Voice Settings** tab
    - Upload a 6-30 second audio sample (clear speech, no background noise)
@@ -206,6 +217,7 @@ Digital Twin includes self-hosted voice cloning using Coqui AI's XTTS-v2 model. 
 #### Troubleshooting
 
 See `COQUI_SETUP.md` for detailed troubleshooting:
+
 - Server startup issues
 - Audio format errors
 - Performance optimization
@@ -256,10 +268,8 @@ digitaltwin-frontend/
 
 1. **Semantic (Facts)**: Timeless truths about you
    - Example: "favorite_color: blue"
-   
 2. **Episodic**: Specific events with context
    - Example: "Went to Paris in June 2023"
-   
 3. **Procedural**: Habits and behavioral rules
    - Example: "Always book flights with United"
 
@@ -281,3 +291,4 @@ Your digital twin learns to communicate like you by analyzing:
 - Humor and personality markers
 - Common phrases and expressions
 
+Build!

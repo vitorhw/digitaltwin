@@ -26,6 +26,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+#face_demo_related
+.venv/
+backend/static/generated/**
+
+#tts
+.tts_cache/
 # Python
 __pycache__/
 *.py[cod]

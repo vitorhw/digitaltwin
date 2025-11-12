@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-const COQUI_API_URL = process.env.COQUI_API_URL || "http://localhost:8000"
+// Use unified server if available, otherwise fallback to standalone Coqui server
+// Default to port 8001 for unified server
+const COQUI_API_URL = process.env.FACE_AVATAR_API_URL || process.env.COQUI_API_URL || "http://localhost:8001"
+
+// Log the URL being used for debugging
+if (typeof process !== "undefined" && process.env) {
+  console.log("[voice/enroll] Using COQUI_API_URL:", COQUI_API_URL)
+}
 
 export async function POST(req: Request) {
   try {
@@ -32,9 +39,15 @@ export async function POST(req: Request) {
     const coquiForm = new FormData()
     coquiForm.append("audio_file", audio)
 
-    const cloneResponse = await fetch(`${COQUI_API_URL}/clone_voice?user_id=${encodeURIComponent(user.id)}`, {
+    const cloneResponse = await fetch(`${COQUI_API_URL}/api/coqui/clone_voice?user_id=${encodeURIComponent(user.id)}`, {
       method: "POST",
       body: coquiForm,
+    }).catch((fetchError) => {
+      console.error("[voice] Fetch error:", fetchError)
+      const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError)
+      throw new Error(
+        `Unable to reach unified server (${COQUI_API_URL}). Please ensure the server is running.\n\nError: ${errorMessage}\n\nStart command: cd backend && python unified_server.py`
+      )
     })
 
     if (!cloneResponse.ok) {
