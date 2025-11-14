@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 // Use unified server if available, otherwise fallback to standalone Coqui server
 // Default to port 8001 for unified server
@@ -13,6 +14,7 @@ if (typeof process !== "undefined" && process.env) {
 export async function POST(req: Request) {
   try {
     const supabase = await createClient()
+    const adminSupabase = createAdminClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -59,14 +61,14 @@ export async function POST(req: Request) {
 
     // Delete old audio sample from storage
     if (existing?.sample_object_path) {
-      await supabase.storage.from("voice-profiles").remove([existing.sample_object_path])
+      await adminSupabase.storage.from("voice-profiles").remove([existing.sample_object_path])
     }
 
     // Upload new audio sample to Supabase storage
     const ext = (audio.name.split(".").pop() || "webm").toLowerCase()
     const objectPath = `${user.id}.${ext}`
 
-    const upload = await supabase.storage.from("voice-profiles").upload(objectPath, audio, {
+    const upload = await adminSupabase.storage.from("voice-profiles").upload(objectPath, audio, {
       cacheControl: "3600",
       upsert: true,
       contentType: audio.type || "audio/webm",
@@ -77,7 +79,7 @@ export async function POST(req: Request) {
     }
 
     // Store voice profile with Coqui voice_id
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from("voice_profile")
       .upsert(
         {

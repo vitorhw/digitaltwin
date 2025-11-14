@@ -6,6 +6,8 @@ const FACE_AVATAR_API_URL = process.env.FACE_AVATAR_API_URL || "http://localhost
 // Log the URL being used for debugging
 console.log("[face-avatar/generate] Using FACE_AVATAR_API_URL:", FACE_AVATAR_API_URL)
 
+type NodeRequestInit = RequestInit & { duplex?: "half" }
+
 export async function POST(request: NextRequest) {
   try {
     // Log for debugging
@@ -40,13 +42,14 @@ export async function POST(request: NextRequest) {
     const headers = new Headers(request.headers)
     headers.delete("content-length")
 
-    const response = await fetch(`${FACE_AVATAR_API_URL}/api/generate`, {
+    const requestInit: NodeRequestInit = {
       method: "POST",
       headers,
       body: request.body,
-      // Required when streaming a request body in Node.js
       duplex: "half",
-    }).catch((fetchError) => {
+    }
+
+    const response = await fetch(`${FACE_AVATAR_API_URL}/api/generate`, requestInit).catch((fetchError) => {
       console.error("[face-avatar] Fetch error:", fetchError)
       const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError)
       throw new Error(
@@ -82,4 +85,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-

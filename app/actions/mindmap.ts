@@ -101,41 +101,6 @@ async function fetchDocChunks() {
     }
 }
 
-function addNode(
-    id: string,
-    type: string,
-    label : string,
-    nodes: Node[],
-    position?: { x: number; y: number },
-    categoryPositions?: {x: number; y: number},
-    parentId?: string) {
-    if(position && !parentId) {
-        nodes.push({
-            id: id,
-            type: "mindmap",
-            data: { label: label },
-            position: position,
-        })
-    }
-    else if(parentId && categoryPositions) {
-        nodes.push({
-            id: id,
-            type: type,
-            data: { label: label },
-            position: categoryPositions || { x: 0, y: 0 },
-            parentId: parentId,
-        })
-    } else if (position && !categoryPositions && parentId) {
-        nodes.push({
-            id: id,
-            type: type,
-            data: { label: label },
-            position: position,
-            parentId: parentId,
-        })
-    }
-}
-
 function addEdge(
     id: string,
     source: string,
@@ -148,6 +113,34 @@ function addEdge(
         target: target,
         type: type,
     })
+}
+
+type NodeKind = "root" | "category" | "fact" | "episodic" | "procedural" | "document"
+
+interface AddNodeOptions {
+  id: string
+  label: string
+  nodes: Node[]
+  position?: { x: number; y: number }
+  anchor?: { x: number; y: number }
+  parentId?: string
+  kind: NodeKind
+  meta?: Record<string, any>
+}
+
+function addMindmapNode({ id, label, nodes, position, anchor, parentId, kind, meta }: AddNodeOptions) {
+  const finalPosition = position ?? anchor ?? { x: 0, y: 0 }
+  nodes.push({
+    id,
+    type: "mindmap",
+    position: finalPosition,
+    parentNode: parentId,
+    data: {
+      label,
+      kind,
+      meta,
+    },
+  })
 }
 
 export async function fetchMindMapData(): Promise<{ data?: MindmapData; error?: string }> {
@@ -190,7 +183,7 @@ export async function fetchMindMapData(): Promise<{ data?: MindmapData; error?: 
     }
 
     const rootId = "root"
-    addNode(rootId, "mindmap", rootLabel, nodes, { x: 0, y: 0 }, undefined, undefined)
+    addMindmapNode({ id: rootId, label: rootLabel, nodes, position: { x: 0, y: 0 }, kind: "root" })
 
     const categoryPositions: Record<string, { x: number; y: number }> = {
       doc_chunks: { x: -300, y: -150 },
@@ -199,77 +192,90 @@ export async function fetchMindMapData(): Promise<{ data?: MindmapData; error?: 
       procedural_rules: { x: 300, y: 150 },
     }
 
-    const createCategoryWithChildren = (
-      categoryName: string,
-      displayName: string,
+    const emitNodes = (
+      categoryName: keyof typeof categoryPositions,
       items: Array<Record<string, any>>,
-      childLabel: (item: any) => string,
+      kind: NodeKind,
+      getPayload: (item: any) => { label: string; meta?: Record<string, any> },
     ) => {
-      const categoryId = `category-${categoryName}`
-
-      addNode(categoryId, "mindmap", displayName, nodes, undefined, categoryPositions[categoryName], rootId)
-      addEdge(`edge-${rootId}-${categoryId}`, rootId, categoryId, "mindmap", edges)
-
       items?.forEach((item, index) => {
         const childId = `${categoryName}-${item.id || nanoid()}`
         const angle = (index / Math.max(items.length, 1)) * Math.PI * 2
-        const radius = 120
+        const radius = 200
+        const { label, meta } = getPayload(item)
 
-        addNode(childId, "mindmap", childLabel(item), nodes, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, }, undefined, categoryId)
-        addEdge(`edge-${categoryId}-${childId}`, categoryId, childId, "mindmap", edges)
+        addMindmapNode({
+          id: childId,
+          label,
+          nodes,
+          position: { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius },
+          parentId: rootId,
+          kind,
+          meta,
+        })
+        addEdge(`edge-${rootId}-${childId}`, rootId, childId, "mindmap", edges)
       })
     }
 
     if (docResponse.docChunks && docResponse.docChunks.length > 0) {
-      createCategoryWithChildren(
-        "doc_chunks",
-        `Documents`,
-        docResponse.docChunks,
-        (item) => `${item.doc_title}: ${item.text}` || "Untitled",
-      )
+      // documents are currently excluded from the 3D map at user request
     }
 
     if (episodicResponse.episodicMemories && episodicResponse.episodicMemories.length > 0) {
-      createCategoryWithChildren(
+      emitNodes(
         "episodic_memories",
-        `Episodic Memories`,
         episodicResponse.episodicMemories,
-        (item) => item.text,
+        "episodic",
+        (item) => ({
+          label: item.text.slice(0, 32),
+          meta: {
+            text: item.text,
+            occurred_at: item.occurred_at,
+            location: item.location,
+            importance: item.importance,
+            confidence: item.confidence,
+            emotional_valence: item.emotional_valence,
+          },
+        }),
       )
     }
 
     if (profileResponse.profileFacts && profileResponse.profileFacts.length > 0) {
-      const factsId = "category-profile_facts"
-
-      addNode(factsId, "mindmap", `Profile Facts`, nodes, categoryPositions.profile_facts, undefined, rootId)
-      addEdge(`edge-${rootId}-${factsId}`, rootId, factsId, "mindmap", edges)
-
-      profileResponse.profileFacts.forEach((fact, index) => {
-        const factId = `fact-${fact.id}`
-        const angle = (index / Math.max(profileResponse.profileFacts.length, 1)) * Math.PI * 2
-        const radius = 120
-
-        if (fact.key !== "name") {
-            addNode(
-                factId, 
-                "mindmap", 
-                `${fact.key}: ${JSON.parse(JSON.stringify(fact.value)).text}`, 
-                nodes, 
-                { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius,}, 
-                undefined, 
-                factsId
-            )
-            addEdge(`edge-${factsId}-${factId}`, factsId, factId, "mindmap", edges)
-        }
-      })
+      const filteredFacts = profileResponse.profileFacts.filter((fact) => fact.key !== "name")
+      if (filteredFacts.length > 0) {
+        emitNodes(
+          "profile_facts",
+          filteredFacts,
+          "fact",
+          (fact) => ({
+            label: fact.key,
+            meta: {
+              value: typeof fact.value === "object" ? fact.value : { text: String(fact.value) },
+              confidence: fact.confidence,
+              sensitivity: fact.sensitivity,
+              fact_date: fact.fact_date,
+            },
+          }),
+        )
+      }
     }
 
     if (proceduralResponse.proceduralRules && proceduralResponse.proceduralRules.length > 0) {
-      createCategoryWithChildren(
+      emitNodes(
         "procedural_rules",
-        `Procedural Rules`,
         proceduralResponse.proceduralRules,
-        (item) => `${item.rule_type.charAt(0).toUpperCase() + item.rule_type.slice(1)}: ${item.action}`,
+        "procedural",
+        (item) => ({
+          label: item.action,
+          meta: {
+            action: item.action,
+            rule_type: item.rule_type,
+            condition: item.condition,
+            importance: item.importance,
+            confidence: item.confidence,
+            times_observed: item.times_observed,
+          },
+        }),
       )
     }
 

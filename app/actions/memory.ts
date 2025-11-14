@@ -1,8 +1,14 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { revalidatePath } from "next/cache"
 import { extractTemporalInfo } from "@/lib/temporal-parser"
+import fs from "node:fs/promises"
+import path from "node:path"
+import { Buffer } from "node:buffer"
+import { cookies } from "next/headers"
+import type { VoiceProfile } from "@/app/actions/voice"
 
 // ============= FACTS =============
 
@@ -292,7 +298,7 @@ export async function proposeEpisodic(text: string, confidenceValue: number, occ
     const { date: parsedDate, cleanedText, temporalPhrase } = await extractTemporalInfo(text)
 
     // Use parsed date if available, otherwise use provided occurredAt or current time
-    const finalOccurredAt = parsedDate?.toISOString() || occurredAt || new Date().toISOString()
+    const finalOccurredAt = parsedDate?.toISOString() ?? occurredAt ?? null
 
     // Use cleaned text if temporal phrase was extracted, otherwise use original
     const finalText = temporalPhrase ? cleanedText : text
@@ -354,7 +360,7 @@ export async function confirmEpisodic(text: string, confidenceValue: number, occ
     const { date: parsedDate, cleanedText, temporalPhrase } = await extractTemporalInfo(text)
 
     // Use parsed date if available, otherwise use provided occurredAt or current time
-    const finalOccurredAt = parsedDate?.toISOString() || occurredAt || new Date().toISOString()
+    const finalOccurredAt = parsedDate?.toISOString() ?? occurredAt ?? null
 
     // Use cleaned text if temporal phrase was extracted, otherwise use original
     const finalText = temporalPhrase ? cleanedText : text
@@ -797,8 +803,81 @@ async function wipeAllUserDataManual() {
 
 // ============= DIAGNOSTIC FUNCTIONS =============
 
+interface DiagnosticEntry {
+  name: string
+  status: "ok" | "error"
+  message?: string
+  error?: string
+}
+
+export interface DiagnosticsArtifacts {
+  voiceAudioDataUrl?: string
+  avatarMesh?: MeshData
+  avatarFeatures?: Features
+  avatarTextureDataUrl?: string
+  voiceProfile?: VoiceProfile | null
+}
+
+interface MeshData {
+  vertices: number[][]
+  faces: number[][]
+  uv: number[][]
+}
+
+interface Features {
+  lips?: number[]
+  lower_lip?: number[]
+  upper_lip?: number[]
+}
+
+const VOICE_MIME_TYPES: Record<string, string> = {
+  ".wav": "audio/wav",
+  ".webm": "audio/webm",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".ogg": "audio/ogg",
+}
+
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+}
+
+function detectMimeType(filePath: string, fallback: string, overrides: Record<string, string>) {
+  const ext = path.extname(filePath).toLowerCase()
+  return overrides[ext] || fallback
+}
+
+function bufferToBlobPart(buffer: Buffer) {
+  return new Uint8Array(buffer)
+}
+
+async function buildCookieHeader() {
+  const cookieStore = await cookies()
+  const pairs = cookieStore.getAll().map(({ name, value }) => `${name}=${value}`)
+  return pairs.length ? pairs.join("; ") : null
+}
+
+function formatErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message
+  }
+  if (typeof error === "string") {
+    return error
+  }
+  return "Unknown error"
+}
+
 export async function checkDatabaseFunctions() {
   const supabase = await createClient()
+  let adminSupabase = null
+  try {
+    adminSupabase = createAdminClient()
+  } catch (error) {
+    console.error("[v0] Failed to create admin Supabase client:", error)
+  }
 
   const {
     data: { user },
@@ -807,208 +886,306 @@ export async function checkDatabaseFunctions() {
     return { error: "Unauthorized" }
   }
 
-  const diagnostics = []
+  const diagnostics: DiagnosticEntry[] = []
+  const artifacts: DiagnosticsArtifacts = {}
+  const cookieHeader = await buildCookieHeader()
+  const authHeaders = cookieHeader ? { cookie: cookieHeader } : undefined
+  const baseUrl =
+    process.env.SYSTEM_CHECK_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+  const coquiUrl = process.env.FACE_AVATAR_API_URL || process.env.COQUI_API_URL || "http://localhost:8001"
+
+  const sampleDir = process.env.SYSTEM_CHECK_SAMPLE_DIR
+    ? path.resolve(process.cwd(), process.env.SYSTEM_CHECK_SAMPLE_DIR)
+    : path.join(process.cwd(), "system-check-assets")
+  const voiceSampleName = process.env.SYSTEM_CHECK_VOICE_FILE || "voice-sample.wav"
+  const faceSampleName = process.env.SYSTEM_CHECK_FACE_FILE || "face-sample.jpg"
+  const voiceSamplePath = path.join(sampleDir, voiceSampleName)
+  const faceSamplePath = path.join(sampleDir, faceSampleName)
+
+  const relativeVoicePath = path.relative(process.cwd(), voiceSamplePath)
+  const relativeFacePath = path.relative(process.cwd(), faceSamplePath)
+
+  let voiceSample: Buffer | null = null
+  let faceSample: Buffer | null = null
 
   try {
-    try {
-      console.log("[v0] Testing hybrid_search_memories...")
-      const testEmbedding = Array(1536).fill(0)
-      const { data, error } = await supabase.rpc("hybrid_search_memories", {
-        p_user_id: user.id,
-        p_query_text: "test",
-        p_query_embedding: `[${testEmbedding.join(",")}]`,
-        p_limit: 1,
-      })
-
-      if (error) {
-        diagnostics.push({
-          name: "hybrid_search_memories",
-          status: "error",
-          error: error.message,
-          message: "Function exists but returned an error. Check the function definition and parameters.",
-        })
-      } else {
-        diagnostics.push({
-          name: "hybrid_search_memories",
-          status: "ok",
-          message: `Function working correctly. Returned ${data?.length || 0} results.`,
-        })
-      }
-    } catch (e) {
-      diagnostics.push({
-        name: "hybrid_search_memories",
-        status: "error",
-        error: e instanceof Error ? e.message : String(e),
-        message: "Function may not exist or has syntax errors.",
-      })
-    }
-
-    try {
-      console.log("[v0] Testing delete_fact...")
-      const { error } = await supabase.rpc("delete_fact", {
-        p_user_id: user.id,
-        p_fact_key: "nonexistent_test_key_12345",
-      })
-
-      if (error) {
-        diagnostics.push({
-          name: "delete_fact",
-          status: "error",
-          error: error.message,
-          message: "Function exists but returned an error. Check the function definition.",
-        })
-      } else {
-        diagnostics.push({
-          name: "delete_fact",
-          status: "ok",
-          message: "Function working correctly.",
-        })
-      }
-    } catch (e) {
-      diagnostics.push({
-        name: "delete_fact",
-        status: "error",
-        error: e instanceof Error ? e.message : String(e),
-        message: "Function may not exist or has syntax errors.",
-      })
-    }
-
-    try {
-      console.log("[v0] Testing wipe_user_data (dry run)...")
-      // We can't actually test this without wiping data, so just check if it exists
-      const { error } = await supabase.rpc("wipe_user_data", {
-        p_user_id: "00000000-0000-0000-0000-000000000000", // Fake UUID
-      })
-
-      // If we get a specific error about the function not existing, that's bad
-      // If we get any other error (like no data found), that's actually good - it means the function exists
-      if (error && (error.message?.includes("function") || error.message?.includes("does not exist"))) {
-        diagnostics.push({
-          name: "wipe_user_data",
-          status: "error",
-          error: error.message,
-          message: "Function does not exist. Run script 012_create_wipe_user_data_function.sql",
-        })
-      } else {
-        diagnostics.push({
-          name: "wipe_user_data",
-          status: "ok",
-          message: "Function exists and is callable.",
-        })
-      }
-    } catch (e) {
-      diagnostics.push({
-        name: "wipe_user_data",
-        status: "error",
-        error: e instanceof Error ? e.message : String(e),
-        message: "Function may not exist. Run script 012_create_wipe_user_data_function.sql",
-      })
-    }
-
-    try {
-      console.log("[v0] Testing sweep_expired_facts...")
-      const { data, error } = await supabase.rpc("sweep_expired_facts")
-
-      if (error) {
-        diagnostics.push({
-          name: "sweep_expired_facts",
-          status: "error",
-          error: error.message,
-          message: "Function exists but returned an error.",
-        })
-      } else {
-        diagnostics.push({
-          name: "sweep_expired_facts",
-          status: "ok",
-          message: `Function working correctly. Would delete ${data || 0} expired facts.`,
-        })
-      }
-    } catch (e) {
-      diagnostics.push({
-        name: "sweep_expired_facts",
-        status: "error",
-        error: e instanceof Error ? e.message : String(e),
-        message: "Function may not exist or has syntax errors.",
-      })
-    }
-
-    try {
-      console.log("[v0] Testing full fact pipeline...")
-      const testKey = `test_fact_${Date.now()}`
-
-      // Propose a fact
-      const proposeResult = await proposeFact(testKey, "test value", 0.9, "low")
-      if (proposeResult.error) {
-        throw new Error(`Propose failed: ${proposeResult.error}`)
-      }
-
-      // Confirm the fact
-      const confirmResult = await confirmFact(testKey, "test value updated", 0.95, "low")
-      if (confirmResult.error) {
-        throw new Error(`Confirm failed: ${confirmResult.error}`)
-      }
-
-      // Delete the fact
-      const deleteResult = await deleteFact(testKey)
-      if (deleteResult.error) {
-        throw new Error(`Delete failed: ${deleteResult.error}`)
-      }
-
-      diagnostics.push({
-        name: "fact_pipeline",
-        status: "ok",
-        message: "Full fact pipeline (propose → confirm → delete) working correctly.",
-      })
-    } catch (e) {
-      diagnostics.push({
-        name: "fact_pipeline",
-        status: "error",
-        error: e instanceof Error ? e.message : String(e),
-        message: "Error in fact pipeline. Check propose/confirm/delete functions.",
-      })
-    }
-
-    try {
-      console.log("[v0] Testing full episodic pipeline...")
-
-      // Propose an episodic memory
-      const proposeResult = await proposeEpisodic("Test memory for diagnostics", 0.9)
-      if (proposeResult.error) {
-        throw new Error(`Propose failed: ${proposeResult.error}`)
-      }
-
-      const memoryId = proposeResult.memory?.id
-      if (!memoryId) {
-        throw new Error("No memory ID returned from propose")
-      }
-
-      // Delete the memory
-      const deleteResult = await deleteEpisodicMemory(memoryId)
-      if (deleteResult.error) {
-        throw new Error(`Delete failed: ${deleteResult.error}`)
-      }
-
-      diagnostics.push({
-        name: "episodic_pipeline",
-        status: "ok",
-        message: "Full episodic pipeline (propose → delete) working correctly.",
-      })
-    } catch (e) {
-      diagnostics.push({
-        name: "episodic_pipeline",
-        status: "error",
-        error: e instanceof Error ? e.message : String(e),
-        message: "Error in episodic pipeline. Check propose/delete functions.",
-      })
-    }
-
-    // ... existing code for other checks ...
-
-    return { success: true, diagnostics }
+    voiceSample = await fs.readFile(voiceSamplePath)
+    diagnostics.push({
+      name: "voice_sample",
+      status: "ok",
+      message: `Loaded ${relativeVoicePath} (${(voiceSample.length / 1024).toFixed(1)} KB)`,
+    })
   } catch (error) {
-    console.error("[v0] Error in checkDatabaseFunctions:", error)
-    return { error: error instanceof Error ? error.message : "Failed to check database functions" }
+    diagnostics.push({
+      name: "voice_sample",
+      status: "error",
+      error: formatErrorMessage(error),
+      message: `Place a voice file at ${relativeVoicePath}`,
+    })
   }
+
+  try {
+    faceSample = await fs.readFile(faceSamplePath)
+    diagnostics.push({
+      name: "face_sample",
+      status: "ok",
+      message: `Loaded ${relativeFacePath} (${(faceSample.length / 1024).toFixed(1)} KB)`,
+    })
+  } catch (error) {
+    diagnostics.push({
+      name: "face_sample",
+      status: "error",
+      error: formatErrorMessage(error),
+      message: `Place an image at ${relativeFacePath}`,
+    })
+  }
+
+  let clonedVoiceId: string | null = null
+  if (!voiceSample) {
+    diagnostics.push({
+      name: "voice_clone",
+      status: "error",
+      message: "Skipped voice cloning because the sample file is missing.",
+    })
+  } else {
+    const form = new FormData()
+    const mimeType = detectMimeType(voiceSamplePath, "audio/wav", VOICE_MIME_TYPES)
+    form.append("audio_file", new Blob([bufferToBlobPart(voiceSample)], { type: mimeType }), voiceSampleName)
+    const cloneUrl = `${coquiUrl}/api/coqui/clone_voice?user_id=${encodeURIComponent(user.id)}`
+    try {
+      const response = await fetch(cloneUrl, {
+        method: "POST",
+        body: form,
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || `Clone endpoint responded with ${response.status}`)
+      }
+
+      const payload = (await response.json()) as { voice_id?: string }
+      if (!payload.voice_id) {
+        throw new Error("Clone endpoint did not return a voice_id")
+      }
+
+      clonedVoiceId = payload.voice_id
+      diagnostics.push({
+        name: "voice_clone",
+        status: "ok",
+        message: `Cloned voice via ${cloneUrl} (${clonedVoiceId})`,
+      })
+
+      if (!adminSupabase) {
+        diagnostics.push({
+          name: "voice_profile_sync",
+          status: "error",
+          message:
+            "Missing Supabase service role credentials. Set SUPABASE_SERVICE_ROLE_KEY to allow automated profile updates.",
+        })
+      } else if (voiceSample) {
+        const ext = path.extname(voiceSampleName) || ".wav"
+        const objectPath = `${user.id}${ext}`
+        const upload = await adminSupabase.storage.from("voice-profiles").upload(objectPath, voiceSample, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: mimeType,
+        })
+
+        if (upload.error) {
+          diagnostics.push({
+            name: "voice_profile_storage",
+            status: "error",
+            error: upload.error.message,
+            message: "Failed to upload voice sample to Supabase storage.",
+          })
+        } else {
+          const { data: profileData, error: profileError } = await adminSupabase
+            .from("voice_profile")
+            .upsert(
+              {
+                user_id: user.id,
+                sample_object_path: objectPath,
+                sample_mime_type: mimeType,
+                clone_reference: { voice_id: clonedVoiceId },
+                speak_back_enabled: true,
+              },
+              { onConflict: "user_id" },
+            )
+            .select()
+            .single()
+
+          if (profileError) {
+            diagnostics.push({
+              name: "voice_profile_sync",
+              status: "error",
+              error: profileError.message,
+              message: "Failed to sync voice profile record.",
+            })
+          } else {
+            artifacts.voiceProfile = profileData as VoiceProfile
+            diagnostics.push({
+              name: "voice_profile_sync",
+              status: "ok",
+              message: "Voice profile stored and speak-back enabled.",
+            })
+          }
+        }
+      }
+    } catch (error) {
+      diagnostics.push({
+        name: "voice_clone",
+        status: "error",
+        error: formatErrorMessage(error),
+        message: `Failed while calling ${cloneUrl}`,
+      })
+    }
+  }
+
+  if (!clonedVoiceId) {
+    diagnostics.push({
+      name: "voice_tts",
+      status: "error",
+      message: "Skipped playback test because cloning failed.",
+    })
+  } else {
+    const synthUrl = `${coquiUrl}/api/coqui/synthesize`
+    try {
+      const response = await fetch(synthUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: "System diagnostics ping. This should play back quickly.",
+          voice_id: clonedVoiceId,
+          language: "en",
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || `Synthesize endpoint returned ${response.status}`)
+      }
+
+      const audioBuffer = await response.arrayBuffer()
+      artifacts.voiceAudioDataUrl = `data:audio/wav;base64,${Buffer.from(audioBuffer).toString("base64")}`
+      diagnostics.push({
+        name: "voice_tts",
+        status: "ok",
+        message: `Synthesized ${(audioBuffer.byteLength / 1024).toFixed(1)} KB of audio`,
+      })
+    } catch (error) {
+      diagnostics.push({
+        name: "voice_tts",
+        status: "error",
+        error: formatErrorMessage(error),
+        message: `Failed while calling ${synthUrl}`,
+      })
+    }
+  }
+
+  let meshPath: string | null = null
+  let featuresPath: string | null = null
+  if (!faceSample) {
+    diagnostics.push({
+      name: "avatar_generate",
+      status: "error",
+      message: "Skipped avatar generation because the sample image is missing.",
+    })
+  } else {
+    const faceForm = new FormData()
+    const mimeType = detectMimeType(faceSamplePath, "image/jpeg", IMAGE_MIME_TYPES)
+    artifacts.avatarTextureDataUrl = `data:${mimeType};base64,${faceSample.toString("base64")}`
+    faceForm.append("photo", new Blob([bufferToBlobPart(faceSample)], { type: mimeType }), faceSampleName)
+
+    const generateUrl = new URL("/api/face-avatar/generate", baseUrl).toString()
+    try {
+      const response = await fetch(generateUrl, {
+        method: "POST",
+        headers: authHeaders,
+        body: faceForm,
+      })
+      const rawText = await response.text()
+      let payload: { ok?: boolean; mesh?: string; features?: string; error?: string } | null = null
+      try {
+        payload = JSON.parse(rawText)
+      } catch {
+        throw new Error(`Avatar API returned non-JSON response: ${rawText.slice(0, 200)}`)
+      }
+
+      if (!response.ok || !payload?.ok) {
+        const errorMessage = payload?.error || `Avatar endpoint returned ${response.status}`
+        throw new Error(errorMessage)
+      }
+
+      meshPath = payload.mesh ?? null
+      featuresPath = payload.features ?? null
+
+      diagnostics.push({
+        name: "avatar_generate",
+        status: "ok",
+        message: `Avatar backend responded with mesh ${meshPath} and features ${featuresPath}`,
+      })
+    } catch (error) {
+      diagnostics.push({
+        name: "avatar_generate",
+        status: "error",
+        error: formatErrorMessage(error),
+        message: `Failed while calling ${generateUrl}`,
+      })
+    }
+  }
+
+  const proxyStatic = async (fieldName: string, remotePath: string | null, label: string) => {
+    if (!remotePath) {
+      diagnostics.push({
+        name: fieldName,
+        status: "error",
+        message: `Skipped ${label} fetch because the generate step failed.`,
+      })
+      return
+    }
+
+    const normalizedPath = remotePath.startsWith("/static") ? remotePath.replace("/static", "") : remotePath
+    const staticUrl = new URL(`/api/face-avatar/static${normalizedPath}`, baseUrl).toString()
+    try {
+      const response = await fetch(staticUrl, { headers: authHeaders })
+      if (!response.ok) {
+        throw new Error(`Proxy returned status ${response.status}`)
+      }
+      const payload = await response.json()
+
+      let summary = `Fetched ${label} via ${staticUrl}`
+      if (fieldName === "avatar_mesh_fetch" && Array.isArray(payload?.vertices)) {
+        artifacts.avatarMesh = payload as MeshData
+        summary = `Fetched mesh (${payload.vertices.length} vertices) via ${staticUrl}`
+      } else if (fieldName === "avatar_features_fetch") {
+        const featureKeys = Object.keys(payload || {})
+        artifacts.avatarFeatures = payload as Features
+        summary = `Fetched features (${featureKeys.join(", ") || "no keys"}) via ${staticUrl}`
+      }
+
+      diagnostics.push({
+        name: fieldName,
+        status: "ok",
+        message: summary,
+      })
+    } catch (error) {
+      diagnostics.push({
+        name: fieldName,
+        status: "error",
+        error: formatErrorMessage(error),
+        message: `Failed while calling ${staticUrl}`,
+      })
+    }
+  }
+
+  await proxyStatic("avatar_mesh_fetch", meshPath, "mesh data")
+  await proxyStatic("avatar_features_fetch", featuresPath, "facial feature data")
+
+  const success = diagnostics.every((diag) => diag.status === "ok")
+  return { success, diagnostics, artifacts }
 }
 
 async function generateEmbedding(text: string): Promise<number[]> {

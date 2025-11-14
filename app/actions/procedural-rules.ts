@@ -217,10 +217,22 @@ export async function recordRuleObservation(id: string) {
 
   if (error) {
     // Fallback if RPC doesn't exist
+    const { data: rule, error: fetchError } = await supabase
+      .from("procedural_rules")
+      .select("times_observed")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single()
+
+    if (fetchError) {
+      console.error("[v0] Error fetching rule for observation fallback:", fetchError)
+      return { error: fetchError.message }
+    }
+
     const { error: updateError } = await supabase
       .from("procedural_rules")
       .update({
-        times_observed: supabase.raw("times_observed + 1"),
+        times_observed: (rule?.times_observed ?? 0) + 1,
         last_observed_at: new Date().toISOString(),
       })
       .eq("id", id)
@@ -245,10 +257,22 @@ export async function recordRuleApplication(id: string) {
     return { error: "Unauthorized" }
   }
 
+  const { data: rule, error: fetchError } = await supabase
+    .from("procedural_rules")
+    .select("times_applied")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single()
+
+  if (fetchError) {
+    console.error("[v0] Error fetching rule for application:", fetchError)
+    return { error: fetchError.message }
+  }
+
   const { error } = await supabase
     .from("procedural_rules")
     .update({
-      times_applied: supabase.raw("times_applied + 1"),
+      times_applied: (rule?.times_applied ?? 0) + 1,
       last_applied_at: new Date().toISOString(),
     })
     .eq("id", id)
@@ -281,131 +305,4 @@ export async function deleteProceduralRule(id: string) {
 
   revalidatePath("/")
   return { success: true }
-}
-
-export async function analyzeAndExtractRules() {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { error: "Unauthorized" }
-  }
-
-  try {
-    // Get recent episodic memories and facts to analyze
-    const [memoriesResult, factsResult] = await Promise.all([
-      supabase
-        .from("episodic_memories")
-        .select("text, occurred_at")
-        .eq("user_id", user.id)
-        .order("occurred_at", { ascending: false })
-        .limit(100),
-      supabase.from("profile_facts").select("key, value").eq("user_id", user.id).eq("status", "confirmed"),
-    ])
-
-    if (memoriesResult.error || factsResult.error) {
-      throw new Error("Failed to fetch memories and facts")
-    }
-
-    const memories = memoriesResult.data || []
-    const facts = factsResult.data || []
-
-    // Use AI to extract procedural rules
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      throw new Error("OPENAI_API_KEY not set")
-    }
-
-    const prompt = `Analyze the following memories and facts to extract procedural rules (habits, preferences, routines, if/then rules, and skills).
-
-MEMORIES:
-${memories.map((m) => `- ${m.text}`).join("\n")}
-
-FACTS:
-${facts.map((f) => `- ${f.key}: ${JSON.stringify(f.value)}`).join("\n")}
-
-Extract procedural rules in the following format. Only extract rules that are clearly evident from the data:
-
-RULES:
-[
-  {
-    "rule_type": "habit|preference|routine|if_then|skill",
-    "condition": "optional: when/if this happens",
-    "action": "what the person does or prefers",
-    "context": "optional: additional context",
-    "confidence": 0.0-1.0,
-    "frequency": "always|usually|sometimes|rarely",
-    "importance": 0.0-1.0
-  }
-]
-
-Examples:
-- If someone mentions "I always book flights with United", extract: {"rule_type": "preference", "action": "book flights with United", "confidence": 0.9, "frequency": "always", "importance": 0.7}
-- If someone mentions "I go to the gym every morning", extract: {"rule_type": "routine", "action": "go to the gym", "context": "morning", "confidence": 0.8, "frequency": "always", "importance": 0.6}
-- If someone mentions "When I'm stressed, I go for a walk", extract: {"rule_type": "if_then", "condition": "when stressed", "action": "go for a walk", "confidence": 0.8, "frequency": "usually", "importance": 0.7}
-
-Return ONLY the JSON array, no other text.`
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an expert at analyzing personal data to extract behavioral patterns, habits, and preferences. Return only valid JSON.",
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.3,
-      }),
-    })
-
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content
-
-    if (!content) {
-      throw new Error("No content in AI response")
-    }
-
-    // Parse the JSON response
-    const rules = JSON.parse(content)
-
-    if (!Array.isArray(rules)) {
-      throw new Error("AI response is not an array")
-    }
-
-    // Create the extracted rules
-    const createdRules: ProceduralRule[] = []
-    for (const rule of rules) {
-      const result = await createProceduralRule(rule.rule_type, rule.action, {
-        condition: rule.condition,
-        context: rule.context,
-        confidence: rule.confidence,
-        frequency: rule.frequency,
-        importance: rule.importance,
-      })
-
-      if (result.success && result.rule) {
-        createdRules.push(result.rule)
-      }
-    }
-
-    revalidatePath("/")
-    return { success: true, rules: createdRules, count: createdRules.length }
-  } catch (error) {
-    console.error("[v0] Error in analyzeAndExtractRules:", error)
-    return { error: error instanceof Error ? error.message : "Failed to analyze and extract rules" }
-  }
 }

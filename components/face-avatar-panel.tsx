@@ -1,17 +1,10 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { useAvatar } from "@/components/avatar-context"
 
@@ -31,8 +24,13 @@ export function FaceAvatarPanel() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const { toast } = useToast()
   const { setMeshData, setFeatures, setTextureUrl, setVoice, avatarState } = useAvatar()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -97,60 +95,45 @@ export function FaceAvatarPanel() {
     }
   }, [selectedFile, setMeshData, setFeatures, toast])
 
+  if (!mounted) {
+    return (
+      <div className="flex h-40 items-center justify-center rounded-xl border text-xs text-muted-foreground">
+        Loading avatar tools...
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-full flex-col gap-4 p-4">
-      <Card className="flex flex-col">
-        <CardHeader>
-          <CardTitle>Generate Avatar</CardTitle>
-          <CardDescription>Upload a photo to generate a 3D avatar that will appear on the main interface</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="file-upload">Select Image</Label>
-            <Input
-              id="file-upload"
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
-            />
-          </div>
-          <Button
-            onClick={generateAvatar}
-            disabled={!selectedFile || isGenerating}
-            className="w-full"
-          >
-            {isGenerating ? "Generating..." : "Generate Avatar"}
-          </Button>
-          {previewUrl && (
-            <div className="w-full aspect-square overflow-hidden rounded border">
-              <img
-                src={previewUrl}
-                alt="Preview"
-                className="w-full h-full object-contain"
-              />
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="voice-select">Voice Selection</Label>
-            <Select
-              value={avatarState.voice || undefined}
-              onValueChange={(value) => setVoice(value || null)}
-            >
-              <SelectTrigger id="voice-select" className="w-full">
-                <SelectValue placeholder="Default" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="coqui">Cloned Voice (Coqui)</SelectItem>
-                <SelectItem value="Zira">Windows: Zira (Female)</SelectItem>
-                <SelectItem value="David">Windows: David (Male)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
-              Choose how the avatar speaks. Use "Cloned Voice" after enrolling a Coqui voice profile, or select a built-in Windows voice (Zira/David).
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Label htmlFor="avatar-file">Portrait Photo</Label>
+        <Input id="avatar-file" type="file" accept="image/*" onChange={handleFileChange} />
+        <p className="text-xs text-muted-foreground">Upload a clear, front-facing photo (JPG or PNG).</p>
+      </div>
+      <Button onClick={generateAvatar} disabled={!selectedFile || isGenerating} className="w-full sm:w-auto">
+        {isGenerating ? "Generating..." : "Generate Avatar"}
+      </Button>
+      {previewUrl && (
+        <div className="w-full h-52 overflow-hidden rounded-xl border bg-black/60">
+          <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
+        </div>
+      )}
+      <div className="space-y-2">
+        <Label htmlFor="voice-select">Voice Selection</Label>
+        <Select value={avatarState.voice || undefined} onValueChange={(value) => setVoice(value || null)}>
+          <SelectTrigger id="voice-select" className="w-full">
+            <SelectValue placeholder="Default" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="coqui">Cloned Voice (Coqui)</SelectItem>
+            <SelectItem value="Zira">Windows: Zira (Female)</SelectItem>
+            <SelectItem value="David">Windows: David (Male)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Select the default narration voice. Choose Coqui once a voice profile is registered.
+        </p>
+      </div>
     </div>
   )
 }

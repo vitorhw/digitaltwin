@@ -23,7 +23,7 @@ interface DraggableAvatarProps {
   features: Features | null
   textureUrl: string | null
   audioUrl: string | null
-  onPositionChange?: (x: number, y: number) => void
+  onPositionChange?: (position: { x: number; y: number }) => void
   styleMode?: VoiceFilterStyle
 }
 
@@ -209,10 +209,18 @@ export function DraggableAvatar({
     if (state.mesh) {
       state.scene.remove(state.mesh)
       state.mesh.geometry.dispose()
-      if ((state.mesh.material as THREE.MeshPhongMaterial).map) {
-        ;(state.mesh.material as THREE.MeshPhongMaterial).map?.dispose()
+      const disposeMaterial = (material: THREE.Material) => {
+        if ("map" in material && (material as THREE.MeshPhongMaterial).map) {
+          ;(material as THREE.MeshPhongMaterial).map?.dispose()
+        }
+        material.dispose()
       }
-      state.mesh.material.dispose()
+      const material = state.mesh.material
+      if (Array.isArray(material)) {
+        material.forEach((item) => disposeMaterial(item))
+      } else {
+        disposeMaterial(material)
+      }
       state.mesh = null
       state.origPos = null
     }
@@ -230,12 +238,16 @@ export function DraggableAvatar({
 
     const mesh = new THREE.Mesh(geometry, mat)
     mesh.rotation.y = Math.PI
+    mesh.renderOrder = 0
     state.scene.add(mesh)
     state.mesh = mesh
 
     // Clone base positions for deformation
     const posAttr = mesh.geometry.getAttribute("position")
     state.origPos = posAttr.array.slice(0) as Float32Array
+
+    // Soft edge silhouette pass
+    return () => {}
   }, [meshData, textureUrl, buildMeshFromJSON])
 
   // Update lip indices when features change
@@ -384,7 +396,7 @@ export function DraggableAvatar({
     const newX = e.clientX - dragStartRef.current.x
     const newY = e.clientY - dragStartRef.current.y
     setPosition({ x: newX, y: newY })
-    onPositionChange?.(newX, newY)
+    onPositionChange?.({ x: newX, y: newY })
   }, [isDragging, onPositionChange])
 
   const handleMouseUp = useCallback(() => {
@@ -476,6 +488,14 @@ export function DraggableAvatar({
           filter: canvasFilter,
         }}
       />
+      <div className="pointer-events-none absolute inset-0">
+        <div
+          className="absolute inset-0"
+          style={{
+            boxShadow: "inset 0 0 30px 20px rgba(0,0,0,0.75)",
+          }}
+        />
+      </div>
       <div
         className="pointer-events-none absolute inset-0 z-20"
         style={{
@@ -533,4 +553,3 @@ if (typeof document !== "undefined" && !document.getElementById("crt-noise-keyfr
   `
   document.head.appendChild(styleEl)
 }
-

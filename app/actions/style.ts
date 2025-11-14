@@ -208,3 +208,121 @@ export async function deleteCommunicationStyle() {
     return { error: error instanceof Error ? error.message : "Failed to delete communication style" }
   }
 }
+
+function ensureOpenAIKey() {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) {
+    throw new Error("OpenAI API key not configured")
+  }
+  return apiKey
+}
+
+export async function detectConversationSpeakers(conversation: string) {
+  try {
+    const apiKey = ensureOpenAIKey()
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You receive a multi-person chat transcript. Identify the distinct speaker names or handles exactly as they appear. Respond as JSON: {\"speakers\": [\"name1\", \"name2\", ...]}",
+          },
+          {
+            role: "user",
+            content: conversation.slice(0, 8000),
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0,
+      }),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      return { error: `OpenAI API error: ${text}` }
+    }
+
+    const result = await response.json()
+    let speakers: string[] = []
+    try {
+      const parsed = JSON.parse(result.choices?.[0]?.message?.content ?? "{}")
+      if (Array.isArray(parsed?.speakers)) {
+        speakers = parsed.speakers.filter((s: unknown) => typeof s === "string" && s.trim().length > 0)
+      }
+    } catch (error) {
+      console.error("[style] Failed to parse speakers JSON:", error)
+    }
+
+    return { speakers }
+  } catch (error) {
+    console.error("[style] detectConversationSpeakers error:", error)
+    return { error: error instanceof Error ? error.message : "Failed to detect speakers" }
+  }
+}
+
+export async function analyzeStyleFromConversation(conversation: string, speaker: string) {
+  try {
+    if (!speaker) {
+      return { error: "Speaker name is required" }
+    }
+    const apiKey = ensureOpenAIKey()
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You analyze chat transcripts to infer a single participant's communication style. Use only the lines spoken by the specified participant.`,
+          },
+          {
+            role: "user",
+            content: `Conversation transcript:\n${conversation.slice(0, 12000)}\n\nParticipant to analyze: ${speaker}\n\nReturn JSON with the fields:\n{\n  "tone_descriptors": [],\n  "formality_level": "very_casual|casual|neutral|formal|very_formal",\n  "humor_style": null or string,\n  "common_phrases": [],\n  "vocabulary_level": "simple|moderate|advanced|technical",\n  "sentence_structure": "short|mixed|long|complex",\n  "emoji_usage": "never|rare|occasional|frequent",\n  "punctuation_style": string or null,\n  "paragraph_length": "brief|moderate|detailed",\n  "example_messages": [array of up to 3 representative quotes],\n  "confidence": 0-1\n}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: 600,
+      }),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      return { error: `OpenAI API error: ${text}` }
+    }
+
+    const result = await response.json()
+    const analysis = JSON.parse(result.choices?.[0]?.message?.content ?? "{}")
+
+    const normalized = {
+      tone_descriptors: analysis.tone_descriptors || [],
+      formality_level: analysis.formality_level || "neutral",
+      humor_style: analysis.humor_style || null,
+      common_phrases: analysis.common_phrases || [],
+      vocabulary_level: analysis.vocabulary_level || "moderate",
+      sentence_structure: analysis.sentence_structure || "mixed",
+      emoji_usage: analysis.emoji_usage || "occasional",
+      punctuation_style: analysis.punctuation_style || "standard",
+      paragraph_length: analysis.paragraph_length || "moderate",
+      example_messages: analysis.example_messages || [],
+      confidence: typeof analysis.confidence === "number" ? analysis.confidence : 0.7,
+      last_analyzed_at: new Date().toISOString(),
+    }
+
+    return { analysis: normalized }
+  } catch (error) {
+    console.error("[style] analyzeStyleFromConversation error:", error)
+    return { error: error instanceof Error ? error.message : "Failed to analyze conversation" }
+  }
+}

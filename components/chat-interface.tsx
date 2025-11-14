@@ -35,6 +35,7 @@ interface Bubble {
   role: Role
   text: string
   ops?: MemoryOp[]
+  thinking?: boolean
 }
 
 function safeId() {
@@ -104,6 +105,8 @@ export function ChatInterface() {
   const { avatarState, setAudioUrl } = useAvatar()
 
   const speakEnabled = useMemo(() => speakBackEnabled && Boolean(profile), [profile, speakBackEnabled])
+  const pendingAssistantTextRef = useRef("")
+  const typingIntervalRef = useRef<number | null>(null)
   const hasAvatar = Boolean(avatarState.meshData)
   const cloneVoiceId = profile?.clone_reference?.voice_id ?? null
 
@@ -112,6 +115,17 @@ export function ChatInterface() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [log])
+
+  useEffect(() => {
+    return () => {
+      if (typingIntervalRef.current) {
+        window.clearInterval(typingIntervalRef.current)
+        typingIntervalRef.current = null
+      }
+    }
+  }, [])
+
+  const speechRequestIdRef = useRef(0)
 
   const handleSpeakToggle = useCallback(() => {
     if (!profile) {
@@ -136,13 +150,81 @@ export function ChatInterface() {
     })
   }, [profile, setSpeakBackEnabledLocal, speakBackEnabled, toast, updateProfile])
 
+  const startAssistantTyping = useCallback(
+    (text: string, token: number) => {
+      if (token !== speechRequestIdRef.current) {
+        return
+      }
+      const safeText = text || ""
+
+      if (typingIntervalRef.current) {
+        window.clearInterval(typingIntervalRef.current)
+        typingIntervalRef.current = null
+      }
+
+      setLog((current) => {
+        if (!current.length) return current
+        const next = [...current]
+        const last = next[next.length - 1]
+        if (!last || last.role !== "assistant") return next
+        last.thinking = false
+        last.text = ""
+        return next
+      })
+
+      let index = 0
+      const interval = Math.max(15, Math.min(50, Math.round(600 / Math.max(1, safeText.length))))
+
+      typingIntervalRef.current = window.setInterval(() => {
+        index++
+        setLog((current) => {
+          if (!current.length) return current
+          const next = [...current]
+          const last = next[next.length - 1]
+          if (!last || last.role !== "assistant") return next
+          last.text = safeText.slice(0, index)
+          return next
+        })
+        if (index >= safeText.length) {
+          if (typingIntervalRef.current) {
+            window.clearInterval(typingIntervalRef.current)
+            typingIntervalRef.current = null
+          }
+        }
+      }, interval)
+    },
+    [setLog],
+  )
+
+  const playQueuedSpeech = useCallback(
+    (text: string, token: number, onStartTyping?: () => void) => {
+      if (token !== speechRequestIdRef.current) {
+        return
+      }
+
+      onStartTyping?.()
+
+      void enqueueSpeech(text).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        toast({ title: "Speak-back failed", description: message, variant: "destructive" })
+      })
+    },
+    [enqueueSpeech, toast],
+  )
+
   const send = useCallback(async () => {
     const userText = input.trim()
     if (!userText) return
 
+    const willSpeak = speakEnabled
     setInput("")
     setBusy(true)
-    setLog((current) => [...current, { role: "user", text: userText }, { role: "assistant", text: "" }])
+    setLog((current) => [
+      ...current,
+      { role: "user", text: userText },
+      { role: "assistant", text: "", thinking: willSpeak },
+    ])
+    pendingAssistantTextRef.current = ""
 
     let shouldSpeak = true
     let opsAttached = false
@@ -185,6 +267,7 @@ export function ChatInterface() {
 
         const chunk = decoder.decode(value)
         fullAssistantText += chunk
+        pendingAssistantTextRef.current += chunk
 
         setLog((current) => {
           if (current.length === 0) return current
@@ -193,12 +276,9 @@ export function ChatInterface() {
           if (!last || last.role !== "assistant") {
             return next
           }
-          const opsForMessage = opsAttached ? last.ops : opsCache
-          opsAttached = true
-          next[next.length - 1] = {
-            role: "assistant",
-            text: (last.text ?? "") + chunk,
-            ops: opsForMessage,
+          if (!opsAttached && opsCache.length > 0) {
+            last.ops = opsCache
+            opsAttached = true
           }
           return next
         })
@@ -231,12 +311,22 @@ export function ChatInterface() {
         })
       }
 
-      if (shouldSpeak && fullAssistantText.trim()) {
+      const trimmedText = fullAssistantText.trim()
+
+      if (shouldSpeak && trimmedText) {
+        const playbackToken = ++speechRequestIdRef.current
+        let typingStarted = false
+        const ensureTypingStart = () => {
+          if (typingStarted) return
+          typingStarted = true
+          startAssistantTyping(trimmedText, playbackToken)
+        }
+
         // If avatar is available, use the local avatar backend TTS; otherwise use Coqui TTS
         if (hasAvatar) {
           let voiceForAvatar: string | null = null
 
-          if (avatarState.voice === "coqui") {
+          if (avatarState.voice === "coqui" || (!avatarState.voice && cloneVoiceId)) {
             if (cloneVoiceId) {
               voiceForAvatar = `coqui:${cloneVoiceId}`
             } else {
@@ -284,7 +374,10 @@ export function ChatInterface() {
                 }
                 const audioUrl = `/api/face-avatar/static/${audioPath}?t=${Date.now()}`
                 console.log("[Avatar] Setting audio URL:", audioUrl, "(from:", data.audio, ")")
-                setAudioUrl(audioUrl)
+                if (playbackToken === speechRequestIdRef.current) {
+                  setAudioUrl(audioUrl)
+                  ensureTypingStart()
+                }
               } else {
                 console.error("[Avatar] TTS response not ok:", data)
               }
@@ -292,22 +385,33 @@ export function ChatInterface() {
               console.error("[Avatar] TTS failed:", error)
               // Fallback to Coqui if avatar TTS fails
               if (speakEnabled) {
-                void enqueueSpeech(fullAssistantText).catch((error) => {
-                  const message = error instanceof Error ? error.message : String(error)
-                  toast({ title: "Speak-back failed", description: message, variant: "destructive" })
-                })
+                playQueuedSpeech(trimmedText, playbackToken, ensureTypingStart)
               }
             }
+          } else if (speakEnabled) {
+            playQueuedSpeech(trimmedText, playbackToken, ensureTypingStart)
           }
         } else if (speakEnabled) {
-          void enqueueSpeech(fullAssistantText).catch((error) => {
-            const message = error instanceof Error ? error.message : String(error)
-            toast({ title: "Speak-back failed", description: message, variant: "destructive" })
-          })
+          playQueuedSpeech(trimmedText, playbackToken, ensureTypingStart)
         }
+      } else if (trimmedText) {
+        const playbackToken = ++speechRequestIdRef.current
+        startAssistantTyping(trimmedText, playbackToken)
       }
     }
-  }, [enqueueSpeech, input, speakEnabled, toast, hasAvatar, avatarState.voice, setAudioUrl, cloneVoiceId, voiceStyle])
+  }, [
+    enqueueSpeech,
+    input,
+    speakEnabled,
+    toast,
+    hasAvatar,
+    avatarState.voice,
+    setAudioUrl,
+    cloneVoiceId,
+    voiceStyle,
+    playQueuedSpeech,
+    startAssistantTyping,
+  ])
 
   return (
     <div className="flex h-full flex-col">
@@ -320,7 +424,14 @@ export function ChatInterface() {
                   bubble.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
                 }`}
               >
-                {bubble.text || ""}
+                {bubble.role === "assistant" && bubble.thinking ? (
+                  <span className="inline-flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Thinking…
+                  </span>
+                ) : (
+                  bubble.text || ""
+                )}
               </span>
 
               {bubble.role === "assistant" && bubble.ops && bubble.ops.length > 0 && (
@@ -620,4 +731,3 @@ export function ChatInterface() {
     </div>
   )
 }
-

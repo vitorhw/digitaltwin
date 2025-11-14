@@ -2,12 +2,11 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   proposeFact,
   confirmFact,
   deleteFact,
-  sweepExpiredFacts,
   getCurrentFacts,
   approveFact,
   rejectFact,
@@ -20,19 +19,20 @@ import {
   getDocuments,
   deleteDocument,
   insertDocumentChunk,
-  generateMockData,
-  checkDatabaseFunctions,
   hybridSearch,
+  checkDatabaseFunctions,
   wipeAllUserData,
+  type DiagnosticsArtifacts,
 } from "@/app/actions/memory"
+import { getProceduralRules, type ProceduralRule } from "@/app/actions/procedural-rules"
+import { useAvatar } from "@/components/avatar-context"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, RefreshCw, Sparkles, AlertCircle, Search, AlertTriangle } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Trash2, AlertCircle, AlertTriangle, Loader2, Search } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useVoiceClone } from "@/components/voice-clone-provider"
+import { CoquiConsole } from "@/components/coqui-console"
 
 interface Fact {
   id: string
@@ -78,17 +78,25 @@ export function DebugFactsPanel({
   initialFacts,
   initialMemories,
   initialDocuments,
+  initialRules,
+  onWipeConfigurations,
 }: {
   initialFacts: Fact[]
   initialMemories: EpisodicMemory[]
   initialDocuments: Document[]
+  initialRules: ProceduralRule[]
+  onWipeConfigurations?: () => Promise<void> | void
 }) {
+  const [mounted, setMounted] = useState(false)
   const [facts, setFacts] = useState<Fact[]>(initialFacts)
   const [memories, setMemories] = useState<EpisodicMemory[]>(initialMemories)
   const [documents, setDocuments] = useState<Document[]>(initialDocuments)
+  const [rules, setRules] = useState<ProceduralRule[]>(initialRules)
   const [loading, setLoading] = useState(false)
   const [diagnostics, setDiagnostics] = useState<any>(null)
   const { toast } = useToast()
+  const { setMeshData, setFeatures, setTextureUrl, setAudioUrl, setVoice } = useAvatar()
+  const { updateProfile, setSpeakBackEnabledLocal, voiceStyle, setVoiceStyle } = useVoiceClone()
 
   // Facts state
   const [factKey, setFactKey] = useState("")
@@ -97,6 +105,7 @@ export function DebugFactsPanel({
   const [factSensitivity, setFactSensitivity] = useState<"low" | "medium" | "high">("low")
   const [factTtl, setFactTtl] = useState("")
   const [needsConfirmation, setNeedsConfirmation] = useState(false)
+  const [wipingConfigs, setWipingConfigs] = useState(false)
 
   // Episodic state
   const [episodicText, setEpisodicText] = useState("")
@@ -114,28 +123,29 @@ export function DebugFactsPanel({
   // Function diagnostics state
   const [showDiagnostics, setShowDiagnostics] = useState(false)
 
-  // Search state and functionality
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<any[]>([])
-  const [searching, setSearching] = useState(false)
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      toast({ title: "Error", description: "Please enter a search query", variant: "destructive" })
-      return
-    }
-
-    setSearching(true)
-    const result = await hybridSearch(searchQuery, 20)
-
-    if (result.results) {
-      setSearchResults(result.results)
-      toast({ title: "Search complete", description: `Found ${result.results.length} results` })
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setSearching(false)
-  }
+  const applyDiagnosticsArtifacts = useCallback(
+    (artifacts?: DiagnosticsArtifacts | null) => {
+      if (!artifacts) return
+      if (artifacts.avatarMesh) {
+        setMeshData(artifacts.avatarMesh)
+      }
+      if (artifacts.avatarFeatures) {
+        setFeatures(artifacts.avatarFeatures)
+      }
+      if (artifacts.avatarTextureDataUrl) {
+        setTextureUrl(artifacts.avatarTextureDataUrl)
+      }
+      if (artifacts.voiceProfile) {
+        updateProfile(artifacts.voiceProfile)
+        setSpeakBackEnabledLocal(artifacts.voiceProfile.speak_back_enabled)
+        setVoice("coqui")
+      }
+      if (artifacts.voiceAudioDataUrl) {
+        setAudioUrl(artifacts.voiceAudioDataUrl)
+      }
+    },
+    [setMeshData, setFeatures, setTextureUrl, setAudioUrl, updateProfile, setSpeakBackEnabledLocal, setVoice],
+  )
 
   // Wipe data functionality
   const handleWipeData = async (e?: React.MouseEvent) => {
@@ -166,23 +176,24 @@ export function DebugFactsPanel({
     setLoading(false)
   }
 
-  const refreshAll = async () => {
+  const refreshAll = useCallback(async () => {
     setLoading(true)
-    const [factsResult, memoriesResult, documentsResult] = await Promise.all([
+    const [factsResult, memoriesResult, documentsResult, rulesResult] = await Promise.all([
       getCurrentFacts(),
       getEpisodicMemories(),
       getDocuments(),
+      getProceduralRules(),
     ])
 
     if (factsResult.facts) setFacts(factsResult.facts)
     if (memoriesResult.memories) setMemories(memoriesResult.memories)
     if (documentsResult.documents) setDocuments(documentsResult.documents)
+    if (rulesResult.rules) setRules(rulesResult.rules)
 
-    toast({ title: "Data refreshed" })
     setLoading(false)
-  }
+  }, [toast])
 
-  const refreshFacts = async () => {
+  const refreshFacts = useCallback(async () => {
     setLoading(true)
     const result = await getCurrentFacts()
     if (result.facts) {
@@ -192,7 +203,7 @@ export function DebugFactsPanel({
       toast({ title: "Error", description: result.error, variant: "destructive" })
     }
     setLoading(false)
-  }
+  }, [toast])
 
   const handleInsertFact = async () => {
     if (!factKey || !factValue) {
@@ -224,22 +235,6 @@ export function DebugFactsPanel({
     setLoading(false)
   }
 
-  const handleSweepExpired = async () => {
-    setLoading(true)
-    const result = await sweepExpiredFacts()
-
-    if (result.success) {
-      toast({
-        title: "Expired facts swept",
-        description: `Deleted ${result.deletedCount} expired fact(s)`,
-      })
-      await refreshFacts()
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setLoading(false)
-  }
-
   const handleDeleteFact = async (key: string) => {
     setLoading(true)
     const result = await deleteFact(key)
@@ -253,7 +248,7 @@ export function DebugFactsPanel({
     setLoading(false)
   }
 
-  const handleApproveFact = async (key: string) => {
+  const handleApproveFact = useCallback(async (key: string) => {
     setLoading(true)
     const result = await approveFact(key)
 
@@ -264,9 +259,9 @@ export function DebugFactsPanel({
       toast({ title: "Error", description: result.error, variant: "destructive" })
     }
     setLoading(false)
-  }
+  }, [refreshFacts, toast])
 
-  const handleRejectFact = async (key: string) => {
+  const handleRejectFact = useCallback(async (key: string) => {
     setLoading(true)
     const result = await rejectFact(key)
 
@@ -277,7 +272,7 @@ export function DebugFactsPanel({
       toast({ title: "Error", description: result.error, variant: "destructive" })
     }
     setLoading(false)
-  }
+  }, [refreshFacts, toast])
 
   const handleInsertEpisodic = async () => {
     if (!episodicText) {
@@ -318,7 +313,7 @@ export function DebugFactsPanel({
     setLoading(false)
   }
 
-  const handleApproveMemory = async (id: string) => {
+  const handleApproveMemory = useCallback(async (id: string) => {
     setLoading(true)
     const result = await approveEpisodicMemory(id)
 
@@ -329,9 +324,58 @@ export function DebugFactsPanel({
       toast({ title: "Error", description: result.error, variant: "destructive" })
     }
     setLoading(false)
+  }, [refreshAll, toast])
+
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      toast({ title: "Need a query", description: "Type anything to search memories.", variant: "destructive" })
+      return
+    }
+
+    setSearching(true)
+    const result = await hybridSearch(searchQuery, 12)
+    if (result.results) {
+      setSearchResults(result.results)
+      toast({ title: "Search complete", description: `Found ${result.results.length} entries.` })
+    } else {
+      toast({ title: "Error", description: result.error, variant: "destructive" })
+    }
+    setSearching(false)
   }
 
-  const handleRejectMemory = async (id: string) => {
+  useEffect(() => {
+    refreshAll()
+  }, [refreshAll])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {}
+      if (Array.isArray(detail.facts)) {
+        setFacts(detail.facts)
+      }
+      if (Array.isArray(detail.memories)) {
+        setMemories(detail.memories)
+      }
+      if (Array.isArray(detail.rules)) {
+        setRules(detail.rules)
+      }
+    }
+    window.addEventListener("debug-data-update", handler)
+    return () => {
+      window.removeEventListener("debug-data-update", handler)
+    }
+  }, [])
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const handleRejectMemory = useCallback(async (id: string) => {
     setLoading(true)
     const result = await rejectEpisodicMemory(id)
 
@@ -342,375 +386,300 @@ export function DebugFactsPanel({
       toast({ title: "Error", description: result.error, variant: "destructive" })
     }
     setLoading(false)
-  }
+  }, [refreshAll, toast])
 
-  const handleInsertDocument = async () => {
-    if (!docUri || !docTitle || !docText) {
-      toast({ title: "Error", description: "URI, title, and text are required", variant: "destructive" })
-      return
-    }
-
-    setLoading(true)
-    const pageNumber = docPage ? Number.parseInt(docPage) : undefined
-
-    const result = await insertDocumentChunk(docUri, docTitle, docText, docSection || undefined, pageNumber)
-
-    if (result.success) {
-      toast({ title: "Document chunk inserted" })
-      setDocUri("")
-      setDocTitle("")
-      setDocText("")
-      setDocSection("")
-      setDocPage("")
-      await refreshAll()
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setLoading(false)
-  }
-
-  const handleDeleteDocument = async (id: string) => {
-    setLoading(true)
-    const result = await deleteDocument(id)
-
-    if (result.success) {
-      toast({ title: "Document deleted" })
-      await refreshAll()
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setLoading(false)
-  }
-
-  const handleGenerateMockData = async () => {
-    if (!confirm("This will generate 20 facts and 500 episodic memories. This may take a few minutes. Continue?")) {
-      return
-    }
-
-    setLoading(true)
-    toast({ title: "Generating mock data...", description: "This may take a few minutes" })
-
-    const result = await generateMockData()
-
-    if (result.success) {
-      toast({ title: "Success", description: result.message })
-      await refreshAll()
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setLoading(false)
-  }
-
-  // Function to check all database functions
   const handleCheckFunctions = async (e?: React.MouseEvent) => {
     e?.preventDefault()
     setLoading(true)
-    toast({ title: "Checking database functions...", description: "This may take a moment" })
+    toast({ title: "Running system diagnostics...", description: "Testing voice and avatar flows" })
 
     const result = await checkDatabaseFunctions()
 
-    if (result.success) {
+    if (result.diagnostics) {
       setDiagnostics(result.diagnostics)
-      const hasErrors = result.diagnostics.some((d: any) => d.status === "error")
+    }
+
+    if (result.success) {
+      applyDiagnosticsArtifacts(result.artifacts)
       toast({
-        title: hasErrors ? "Issues found" : "All functions OK",
-        description: hasErrors
-          ? "Check the diagnostics panel for details"
-          : "All database functions are working correctly",
-        variant: hasErrors ? "destructive" : "default",
+        title: "Voice & avatar OK",
+        description: "End-to-end media flow succeeded",
       })
     } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
+      toast({
+        title: "Issues found",
+        description: result.error || "Review the diagnostics panel for failures",
+        variant: "destructive",
+      })
     }
     setLoading(false)
   }
 
+  if (!mounted) {
+    return (
+      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+        Loading debug console...
+      </div>
+    )
+  }
+
+  const pendingFacts = facts.filter((fact) => fact.status === "candidate").slice(0, 4)
+  const pendingMemories = memories.filter((memory) => memory.provenance_kind === "ai_proposed").slice(0, 4)
+  const topRules = rules.slice(0, 4)
+  const recentMemories = memories.slice(0, 5)
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-shrink-0 p-4 border-b space-y-3">
-        <div className="flex flex-wrap gap-2">
+    <div className="flex h-full flex-col">
+      <div className="space-y-1 border-b bg-muted/15 px-2 py-2">
+        <div className="grid w-full grid-cols-2 gap-2 text-[11px]">
           <Button
             onClick={handleCheckFunctions}
             variant="outline"
             size="sm"
+            className="h-8 justify-start gap-1"
             disabled={loading}
-            className="flex-1 min-w-[140px] bg-transparent"
           >
-            <AlertCircle className="h-4 w-4 mr-2" />
-            Check Functions
+            <AlertCircle className="mr-2 h-4 w-4" />
+            Check systems
           </Button>
           <Button
-            onClick={handleSweepExpired}
-            variant="outline"
+            onClick={() => setVoiceStyle(voiceStyle === "90s_tv" ? "none" : "90s_tv")}
+            variant={voiceStyle === "90s_tv" ? "default" : "outline"}
             size="sm"
-            disabled={loading}
-            className="flex-1 min-w-[100px] bg-transparent"
+            className="h-8 justify-start gap-1"
           >
-            <Sparkles className="h-4 w-4 mr-2" />
-            Sweep Expired
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={refreshAll}
-            variant="outline"
-            size="sm"
-            disabled={loading}
-            className="flex-1 min-w-[100px] bg-transparent"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+            {voiceStyle === "90s_tv" ? "Voice filter on" : "Voice filter off"}
           </Button>
           <Button
             onClick={handleWipeData}
             variant="destructive"
             size="sm"
+            className="h-8 justify-start gap-1"
             disabled={loading}
-            className="flex-1 min-w-[100px]"
           >
-            <AlertTriangle className="h-4 w-4 mr-2" />
-            Wipe Data
+            <AlertTriangle className="mr-2 h-4 w-4" />
+            Wipe data
           </Button>
+          {onWipeConfigurations && (
+            <Button
+              onClick={async () => {
+                if (!onWipeConfigurations) return
+                setWipingConfigs(true)
+                try {
+                  await onWipeConfigurations()
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error)
+                  toast({ title: "Error", description: message, variant: "destructive" })
+                } finally {
+                  setWipingConfigs(false)
+                }
+              }}
+              variant="secondary"
+              size="sm"
+              className="h-8 justify-start gap-1"
+              disabled={loading || wipingConfigs}
+            >
+              {wipingConfigs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Reset setup
+            </Button>
+          )}
+        </div>
+        {diagnostics && (
+          <div className="rounded border bg-background/80 px-2 py-1 text-[10px]" role="status" aria-live="polite">
+            {diagnostics.map((diag: any, i: number) => (
+              <div key={i} className="flex items-center justify-between gap-2">
+                <span>{diag.name}</span>
+                <Badge variant={diag.status === "ok" ? "secondary" : "destructive"}>{diag.status}</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1 border-b bg-muted/10 px-2 py-2">
+        <div className="space-y-1">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Hybrid search</p>
+          <div className="flex gap-2">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search facts, memories, docs..."
+              className="h-8 text-xs"
+            />
+            <Button onClick={handleSearch} disabled={searching} size="sm" className="h-8 px-3 text-[11px]">
+              {searching ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Search className="mr-1 h-4 w-4" />}
+              Go
+            </Button>
+          </div>
+          {searchResults.length > 0 && (
+            <div className="max-h-24 space-y-1 overflow-y-auto pr-1 text-[11px]">
+              {searchResults.map((result, index) => (
+                <div key={`${result.source}-${index}`} className="rounded border bg-background/80 px-2 py-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{result.source}</span>
+                    <span className="text-muted-foreground">{(result.combined_score * 100).toFixed(0)}%</span>
+                  </div>
+                  <p className="text-muted-foreground">{result.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-6">
-        {diagnostics && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Database Function Diagnostics</CardTitle>
-              <CardDescription>Status of all database functions and indexes</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {diagnostics.map((diag: any, i: number) => (
-                  <Alert key={i} variant={diag.status === "error" ? "destructive" : "default"}>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>{diag.name}</AlertTitle>
-                    <AlertDescription>
-                      <div className="text-sm">
-                        <div>
-                          Status:{" "}
-                          <Badge variant={diag.status === "ok" ? "default" : "destructive"}>{diag.status}</Badge>
-                        </div>
-                        {diag.message && <div className="mt-1">{diag.message}</div>}
-                        {diag.error && (
-                          <div className="mt-1 text-destructive font-mono text-xs break-all">{diag.error}</div>
-                        )}
-                      </div>
-                    </AlertDescription>
-                  </Alert>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Search Memories</CardTitle>
-            <CardDescription>Hybrid search across facts, episodic memories, and documents</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search for memories..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleSearch()
-                    }
-                  }}
-                  className="flex-1"
-                />
-                <Button onClick={handleSearch} disabled={searching || !searchQuery.trim()} size="sm">
-                  <Search className="h-4 w-4 mr-2" />
-                  Search
-                </Button>
-              </div>
-
-              {searchResults.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Results ({searchResults.length})</div>
-                  {searchResults.map((result, i) => (
-                    <div key={i} className="border rounded-lg p-3 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">{result.source}</Badge>
-                        <span className="text-xs text-muted-foreground">
-                          Score: {(result.combined_score * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      <p className="text-sm">{result.text}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+      <div className="flex-1 overflow-y-auto space-y-3 p-3 text-sm">
+        <section className="rounded-lg border bg-background/80 p-3">
+          <header className="mb-2 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Facts</p>
+              <p className="text-sm font-medium">{pendingFacts.length ? "Pending approval" : "No pending facts"}</p>
             </div>
-          </CardContent>
-        </Card>
-
-        <Tabs defaultValue="facts" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="facts">Facts ({facts.length})</TabsTrigger>
-            <TabsTrigger value="episodic">Episodic ({memories.length})</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="facts" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Facts</CardTitle>
-                    <CardDescription>All profile facts in the database</CardDescription>
+            <Badge variant="outline">{facts.length} total</Badge>
+          </header>
+          <div className="space-y-2">
+            {pendingFacts.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Incoming facts will appear here for quick approval.</p>
+            ) : (
+              pendingFacts.map((fact) => (
+                <div key={fact.id} className="rounded border px-2 py-2">
+                  <div className="flex items-center justify-between gap-2 text-xs font-medium">
+                    <span className="truncate">{fact.key}</span>
+                    <Badge variant="outline">{fact.sensitivity}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground break-words">
+                    {typeof fact.value === "object" ? JSON.stringify(fact.value) : fact.value}
+                  </p>
+                  <div className="mt-2 flex gap-2 text-xs">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => handleApproveFact(fact.key)}
+                      disabled={loading}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => handleRejectFact(fact.key)}
+                      disabled={loading}
+                    >
+                      Reject
+                    </Button>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {facts.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No facts found</p>
-                  ) : (
-                    facts.map((fact) => (
-                      <div key={fact.id} className="border rounded-lg p-3 space-y-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-sm font-semibold break-words">{fact.key}</span>
-                          <Badge variant={fact.status === "confirmed" ? "default" : "secondary"}>{fact.status}</Badge>
-                          <Badge variant="outline">{fact.sensitivity}</Badge>
-                          {fact.schema_name && <Badge variant="secondary">{fact.schema_name}</Badge>}
-                        </div>
-                        <p className="text-sm text-muted-foreground break-words">
-                          {typeof fact.value === "object" ? JSON.stringify(fact.value) : fact.value}
-                        </p>
-                        <div className="flex gap-3 flex-wrap text-xs text-muted-foreground">
-                          <span>Confidence: {(fact.confidence * 100).toFixed(0)}%</span>
-                          {fact.ttl_days && <span>TTL: {fact.ttl_days} days</span>}
-                          {fact.expires_at && <span>Expires: {new Date(fact.expires_at).toLocaleDateString()}</span>}
-                          {fact.fact_date && <span>Date: {new Date(fact.fact_date).toLocaleDateString()}</span>}
-                        </div>
-                        <div className="flex gap-2 pt-1 flex-wrap">
-                          {fact.status === "candidate" && (
-                            <>
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => handleApproveFact(fact.key)}
-                                disabled={loading}
-                                className="flex-1 min-w-[80px]"
-                              >
-                                ✓ Approve
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleRejectFact(fact.key)}
-                                disabled={loading}
-                                className="flex-1 min-w-[80px]"
-                              >
-                                ✕ Reject
-                              </Button>
-                            </>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteFact(fact.key)}
-                            disabled={loading}
-                            className="ml-auto"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              ))
+            )}
+          </div>
+        </section>
 
-          <TabsContent value="episodic" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Episodic Memories</CardTitle>
-                <CardDescription>Events and experiences</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {memories.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No memories found</p>
-                  ) : (
-                    memories.map((memory) => (
-                      <div key={memory.id} className="border rounded-lg p-3 space-y-2">
-                        <p className="text-sm break-words">{memory.text}</p>
-                        <div className="flex gap-3 flex-wrap text-xs text-muted-foreground">
-                          <span>Confidence: {(memory.confidence * 100).toFixed(0)}%</span>
-                          <span>Occurred: {new Date(memory.occurred_at).toLocaleDateString()}</span>
-                          {memory.location && <span>Location: {memory.location}</span>}
-                          {memory.emotional_valence !== null && memory.emotional_valence !== undefined && (
-                            <span>
-                              Emotion: {memory.emotional_valence > 0 ? "+" : ""}
-                              {memory.emotional_valence.toFixed(1)}
-                            </span>
-                          )}
-                          {memory.importance !== null && memory.importance !== undefined && (
-                            <span>Importance: {memory.importance.toFixed(1)}</span>
-                          )}
-                          {memory.recall_count !== null && memory.recall_count !== undefined && (
-                            <span>Recalls: {memory.recall_count}</span>
-                          )}
-                          {memory.memory_strength !== null && memory.memory_strength !== undefined && (
-                            <span>Strength: {memory.memory_strength.toFixed(2)}</span>
-                          )}
-                          {memory.last_recalled_at && (
-                            <span>Last recalled: {new Date(memory.last_recalled_at).toLocaleDateString()}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{memory.provenance_kind}</Badge>
-                        </div>
-                        <div className="flex gap-2 pt-1 flex-wrap">
-                          {memory.provenance_kind === "ai_proposed" && (
-                            <>
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => handleApproveMemory(memory.id)}
-                                disabled={loading}
-                                className="flex-1 min-w-[80px]"
-                              >
-                                ✓ Approve
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleRejectMemory(memory.id)}
-                                disabled={loading}
-                                className="flex-1 min-w-[80px]"
-                              >
-                                ✕ Reject
-                              </Button>
-                            </>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteMemory(memory.id)}
-                            disabled={loading}
-                            className="ml-auto"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
+        <section className="rounded-lg border bg-background/80 p-3">
+          <header className="mb-2 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Episodic memories</p>
+              <p className="text-sm font-medium">
+                {pendingMemories.length ? "Needs review" : "Nothing waiting"}
+              </p>
+            </div>
+            <Badge variant="outline">{memories.length} stored</Badge>
+          </header>
+          <div className="space-y-2">
+            {pendingMemories.length === 0 ? (
+              <p className="text-xs text-muted-foreground">When new events are proposed they will queue up here.</p>
+            ) : (
+              pendingMemories.map((memory) => (
+                <div key={memory.id} className="rounded border px-2 py-2">
+                  <p className="text-xs font-medium">{memory.text}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {new Date(memory.occurred_at).toLocaleDateString()}
+                    {memory.location ? ` · ${memory.location}` : ""}
+                  </p>
+                  <div className="mt-2 flex gap-2 text-xs">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => handleApproveMemory(memory.id)}
+                      disabled={loading}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => handleRejectMemory(memory.id)}
+                      disabled={loading}
+                    >
+                      Reject
+                    </Button>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-lg border bg-background/80 p-3">
+          <header className="mb-2 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Procedural hints</p>
+              <p className="text-sm font-medium">Top habits & rules</p>
+            </div>
+            <Badge variant="outline">{rules.length} total</Badge>
+          </header>
+          <div className="space-y-2">
+            {topRules.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No active procedural rules yet.</p>
+            ) : (
+              topRules.map((rule) => (
+                <div key={rule.id} className="rounded border px-2 py-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge variant="secondary">{rule.rule_type}</Badge>
+                    <span>Confidence {(rule.confidence * 100).toFixed(0)}%</span>
+                  </div>
+                  <p className="mt-1 font-medium">{rule.action}</p>
+                  {rule.condition && <p className="text-muted-foreground">When: {rule.condition}</p>}
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-lg border bg-background/80 p-3">
+          <header className="mb-2 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Memory log</p>
+              <p className="text-sm font-medium">Latest entries</p>
+            </div>
+            <Badge variant="outline">{memories.length} stored</Badge>
+          </header>
+          <div className="max-h-48 space-y-2 overflow-y-auto pr-1 text-xs">
+            {recentMemories.length === 0 ? (
+              <p className="text-muted-foreground">Memories you store will show up here for quick browsing.</p>
+            ) : (
+              recentMemories.map((memory) => (
+                <div key={`recent-${memory.id}`} className="rounded border px-2 py-2">
+                  <p className="font-medium">{memory.text}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {new Date(memory.occurred_at).toLocaleDateString()}
+                    {memory.location ? ` · ${memory.location}` : ""}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-lg border bg-background/80 p-3 space-y-2">
+          <div>
+            <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Voice synthesizer</p>
+            <p className="text-sm font-medium">Coqui console</p>
+          </div>
+          <CoquiConsole />
+        </section>
       </div>
     </div>
   )

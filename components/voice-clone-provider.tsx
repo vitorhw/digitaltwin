@@ -73,7 +73,7 @@ export function VoiceCloneProvider({
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackProgress, setPlaybackProgress] = useState(0)
   const [playbackDuration, setPlaybackDuration] = useState(0)
-  const [voiceStyle, setVoiceStyle] = useState<VoiceFilterStyle>("none")
+  const [voiceStyle, setVoiceStyle] = useState<VoiceFilterStyle>("90s_tv")
 
   const audioElementRef = useRef<HTMLAudioElement | null>(null)
   const synthesisQueueRef = useRef<Promise<void>>(Promise.resolve())

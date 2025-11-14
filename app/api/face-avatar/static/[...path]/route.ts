@@ -4,10 +4,10 @@ const FACE_AVATAR_API_URL = process.env.FACE_AVATAR_API_URL || "http://localhost
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> | { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const resolvedParams = await Promise.resolve(params)
+    const resolvedParams = await params
     const path = resolvedParams.path.join("/")
     const url = `${FACE_AVATAR_API_URL}/static/${path}`
     
@@ -45,4 +45,3 @@ export async function GET(
     )
   }
 }
-

@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 
 interface MeshData {
   vertices: number[][]
@@ -34,6 +34,7 @@ interface AvatarContextType {
   reset: () => void
 }
 
+const AVATAR_STORAGE_KEY = "avatar-state"
 const AvatarContext = createContext<AvatarContextType | undefined>(undefined)
 
 export function AvatarProvider({ children }: { children: ReactNode }) {
@@ -45,6 +46,36 @@ export function AvatarProvider({ children }: { children: ReactNode }) {
     position: { x: 20, y: 20 },
     audioUrl: null,
   })
+
+  // Rehydrate avatar state from localStorage on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      const stored = window.localStorage.getItem(AVATAR_STORAGE_KEY)
+      if (!stored) return
+      const parsed = JSON.parse(stored) as Partial<AvatarState>
+      setAvatarState((prev) => ({
+        ...prev,
+        ...parsed,
+      }))
+    } catch (error) {
+      console.error("[AvatarProvider] Failed to load stored avatar state:", error)
+    }
+  }, [])
+
+  // Persist avatar state (excluding transient audio) for reloads
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      const persistable: AvatarState = {
+        ...avatarState,
+        audioUrl: null,
+      }
+      window.localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(persistable))
+    } catch (error) {
+      console.error("[AvatarProvider] Failed to persist avatar state:", error)
+    }
+  }, [avatarState.meshData, avatarState.features, avatarState.textureUrl, avatarState.voice, avatarState.position])
 
   const setMeshData = (data: MeshData | null) => {
     setAvatarState((prev) => ({ ...prev, meshData: data }))
@@ -79,6 +110,11 @@ export function AvatarProvider({ children }: { children: ReactNode }) {
       position: { x: 20, y: 20 },
       audioUrl: null,
     })
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(AVATAR_STORAGE_KEY)
+      } catch {}
+    }
   }
 
   return (
@@ -106,4 +142,3 @@ export function useAvatar() {
   }
   return context
 }
-

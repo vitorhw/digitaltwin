@@ -1,21 +1,19 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, useTransition, type ChangeEvent } from "react"
-import { Loader2, Mic, StopCircle, Trash2, UploadCloud, Volume2, VolumeX } from "lucide-react"
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react"
+import { Loader2, Mic, StopCircle, UploadCloud } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { deleteVoiceProfile, setSpeakBackEnabled } from "@/app/actions/voice"
 import { useVoiceClone } from "@/components/voice-clone-provider"
+
 export function VoiceSettingsPanel() {
   const { toast } = useToast()
-  const { profile, speakBackEnabled, updateProfile, setSpeakBackEnabledLocal, voiceStyle, setVoiceStyle } =
-    useVoiceClone()
+  const { updateProfile, setSpeakBackEnabledLocal } = useVoiceClone()
   const [recording, setRecording] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [duration, setDuration] = useState(0)
   const [uploading, setUploading] = useState(false)
-  const [pendingSpeak, startSpeakTransition] = useTransition()
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -86,11 +84,7 @@ export function VoiceSettingsPanel() {
     }
   }, [])
 
-  useEffect(() => {
-    return () => {
-      cleanupRecorder()
-    }
-  }, [cleanupRecorder])
+  useEffect(() => () => cleanupRecorder(), [cleanupRecorder])
 
   const handleUpload = useCallback(
     async (blob: Blob) => {
@@ -113,7 +107,7 @@ export function VoiceSettingsPanel() {
         updateProfile(payload.profile ?? null)
         setSpeakBackEnabledLocal(payload.profile?.speak_back_enabled ?? false)
         setRecordedBlob(null)
-        toast({ title: "Voice saved", description: "Speak-back is now enabled." })
+        toast({ title: "Voice saved", description: "Cloned audio can now be generated." })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         toast({ title: "Upload failed", description: message, variant: "destructive" })
@@ -134,53 +128,14 @@ export function VoiceSettingsPanel() {
     [handleUpload],
   )
 
-  const handleSpeakToggle = useCallback(
-    (enabled: boolean) => {
-      if (!profile) {
-        toast({ title: "No voice sample", description: "Upload a sample before enabling speak-back." })
-        return
-      }
-      const previous = speakBackEnabled
-      setSpeakBackEnabledLocal(enabled)
-      startSpeakTransition(async () => {
-        const result = await setSpeakBackEnabled(enabled)
-        if (result?.error) {
-          toast({ title: "Update failed", description: result.error, variant: "destructive" })
-          setSpeakBackEnabledLocal(previous)
-          return
-        }
-        updateProfile(result.profile ?? { ...profile, speak_back_enabled: enabled })
-        toast({
-          title: enabled ? "Speak-back enabled" : "Speak-back disabled",
-          description: enabled ? "Responses will play in your voice." : "The assistant will stay silent.",
-        })
-      })
-    },
-    [profile, speakBackEnabled, updateProfile, setSpeakBackEnabledLocal, toast, startSpeakTransition],
-  )
-
-  const handleDelete = useCallback(() => {
-    startSpeakTransition(async () => {
-      const result = await deleteVoiceProfile()
-      if (result?.error) {
-        toast({ title: "Delete failed", description: result.error, variant: "destructive" })
-        return
-      }
-      updateProfile(null)
-      setSpeakBackEnabledLocal(false)
-      toast({ title: "Voice removed", description: "Upload a new sample whenever you're ready." })
-    })
-  }, [updateProfile, setSpeakBackEnabledLocal, toast, startSpeakTransition])
-
   return (
-    <div className="flex h-full flex-col gap-4 p-4 overflow-y-auto">
-      <section className="space-y-2">
+    <div className="space-y-4">
+      <div className="space-y-2">
         <h3 className="text-sm font-medium">Voice Sample</h3>
         <p className="text-xs text-muted-foreground">
-          Record or upload at least 30 seconds of clean speech. The audio stays in your private Supabase bucket and is
-          used to synthesize responses with the local XTTS server.
+          Record or upload at least 30 seconds of clean speech. The audio never leaves your Supabase project.
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={recording ? stopRecording : startRecording} variant={recording ? "destructive" : "secondary"}>
             {recording ? (
               <>
@@ -192,12 +147,8 @@ export function VoiceSettingsPanel() {
               </>
             )}
           </Button>
-          <Input type="file" accept="audio/*" onChange={handleFileChange} disabled={uploading} />
-          <Button
-            onClick={() => recordedBlob && handleUpload(recordedBlob)}
-            disabled={!recordedBlob || uploading}
-            className="gap-2"
-          >
+          <Input type="file" accept="audio/*" onChange={handleFileChange} disabled={uploading} className="max-w-xs" />
+          <Button onClick={() => recordedBlob && handleUpload(recordedBlob)} disabled={!recordedBlob || uploading} className="gap-2">
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />} Upload clip
           </Button>
         </div>
@@ -205,73 +156,7 @@ export function VoiceSettingsPanel() {
         {recordedBlob && !recording && (
           <p className="text-xs text-muted-foreground">Ready to upload: {(recordedBlob.size / 1024 / 1024).toFixed(2)} MB</p>
         )}
-      </section>
-
-      <section className="space-y-2">
-        <h3 className="text-sm font-medium">Speak-back</h3>
-        <div className="flex items-center justify-between rounded border p-3">
-          <div>
-            <p className="text-sm font-medium">Play responses in my voice</p>
-            <p className="text-xs text-muted-foreground">
-              Toggle live playback of GPT replies using your cloned voice.
-            </p>
-          </div>
-          <Button
-            variant={speakBackEnabled ? "default" : "outline"}
-            onClick={() => handleSpeakToggle(!speakBackEnabled)}
-            disabled={pendingSpeak || !profile}
-            className="gap-2"
-          >
-            {pendingSpeak ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : speakBackEnabled ? (
-              <>
-                <Volume2 className="h-4 w-4" /> On
-              </>
-            ) : (
-              <>
-                <VolumeX className="h-4 w-4" /> Off
-              </>
-            )}
-          </Button>
-        </div>
-      </section>
-
-      <section className="space-y-2">
-        <h3 className="text-sm font-medium">Voice Filter</h3>
-        <p className="text-xs text-muted-foreground">
-          Flip the broadcast into a glitchy Matrix feed. Toggle to step behind the green code curtain.
-        </p>
-        <Button
-          variant={voiceStyle === "90s_tv" ? "default" : "outline"}
-          onClick={() => setVoiceStyle(voiceStyle === "90s_tv" ? "none" : "90s_tv")}
-          className="w-fit gap-2"
-        >
-          {voiceStyle === "90s_tv" ? (
-            <>
-              <Volume2 className="h-4 w-4" /> Filter: 90s TV (On)
-            </>
-          ) : (
-            <>
-              <VolumeX className="h-4 w-4" /> Filter: Off
-            </>
-          )}
-        </Button>
-      </section>
-
-      {profile && (
-        <section className="space-y-2">
-          <h3 className="text-sm font-medium">Current sample</h3>
-          <div className="rounded border bg-muted/40 p-3 text-xs text-muted-foreground">
-            <p>Path: {profile.sample_object_path}</p>
-            <p>MIME: {profile.sample_mime_type}</p>
-            <p>Updated: {new Date(profile.updated_at).toLocaleString()}</p>
-          </div>
-          <Button variant="destructive" onClick={handleDelete} className="gap-2">
-            <Trash2 className="h-4 w-4" /> Remove voice
-          </Button>
-        </section>
-      )}
+      </div>
     </div>
   )
 }

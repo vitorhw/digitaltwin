@@ -103,5 +103,9 @@ export async function synthesizeVoiceStream(options: SynthesisOptions) {
 }
 
 export function canSpeak(profile: VoiceProfile | null) {
-  return Boolean(profile && profile.clone_reference && profile.clone_reference.speaker_embedding)
+  const reference = profile?.clone_reference as (CloneResult["cloneReference"] & { voice_id?: string }) | null
+  if (!reference) {
+    return false
+  }
+  return Boolean(reference.voice_id || reference.speaker_embedding)
 }

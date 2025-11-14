@@ -329,6 +329,7 @@ export async function POST(req: Request) {
       tools,
       tool_choice: "auto",
       temperature: 0.2,
+      max_tokens: 300,
     })
 
     const firstData = await firstResponse.json()
@@ -551,6 +552,7 @@ export async function POST(req: Request) {
         model: "gpt-4o-mini",
         messages: followMessages,
         temperature: 0.4,
+        max_tokens: 300,
       },
       true,
     )
