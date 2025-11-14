@@ -232,13 +232,16 @@ You must match the person's communication style exactly:`
     }
   }
 
-  basePrompt += `\n\nTool policy:
-- If the person shares a durable preference/profile detail and explicitly confirms: call confirm_fact.
-- If it's likely but not certain: call propose_fact.
-- If they describe an event ("I went to ...", "I booked ..."): call propose_episodic or confirm_episodic.
-- If they mention a habit, preference, routine, or if/then rule: call propose_procedural_rule.
-- Use search_memory to find relevant information before answering questions.
-- Prefer at most 1–2 tool calls per turn.
+  basePrompt += `\n\nMemory capture policy:
+- Aggressively store anything new. Even subtle hints (names, small preferences, current tasks, travel details, goals, timelines, etc.) should trigger a tool call.
+- When in doubt, propose a memory with lower confidence instead of skipping it.
+- Multiple distinct details in one message require multiple tool calls in the same turn.
+- Use confirm_fact only when the user clearly affirms the detail; otherwise use propose_fact.
+- Use propose_episodic/confirm_episodic for any described event, outing, meeting, booking, purchase, or experience—even if tentative or upcoming.
+- Use propose_procedural_rule for routines, habits, operating instructions, "if X then Y" statements, or skills.
+- Procedural rules can be derived from subtle statements like "I usually", "I prefer", "I try to", or "When X happens I do Y".
+- There is no strict limit on tool calls—call as many as needed to cover every memory fragment before responding.
+- Use search_memory whenever it can surface context for the reply.
 - After calling tools, answer naturally as the person would. If you stored something to memory, you can briefly acknowledge it naturally (e.g., "Got it, I'll remember that").
 - IMPORTANT: If you claim you saved to memory, you must call a tool first.
 

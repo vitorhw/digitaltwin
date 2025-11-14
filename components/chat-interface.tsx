@@ -1,15 +1,15 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
-import { ChevronDown, ChevronUp, Loader2, Send, Volume2, VolumeX } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { ChevronDown, ChevronUp, Loader2, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { setSpeakBackEnabled } from "@/app/actions/voice"
 import { useVoiceClone } from "@/components/voice-clone-provider"
 import { useAvatar } from "@/components/avatar-context"
 import { AudioProgressBar } from "@/components/audio-progress-bar"
+import { cn } from "@/lib/utils"
 
 type Role = "user" | "assistant"
 
@@ -99,9 +99,7 @@ export function ChatInterface() {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const { toast } = useToast()
   const [expandedOps, setExpandedOps] = useState<Set<string>>(new Set())
-  const [togglePending, startToggleTransition] = useTransition()
-  const { profile, speakBackEnabled, setSpeakBackEnabledLocal, updateProfile, enqueueSpeech, voiceStyle } =
-    useVoiceClone()
+  const { profile, speakBackEnabled, updateProfile, enqueueSpeech, voiceStyle } = useVoiceClone()
   const { avatarState, setAudioUrl } = useAvatar()
 
   const speakEnabled = useMemo(() => speakBackEnabled && Boolean(profile), [profile, speakBackEnabled])
@@ -126,29 +124,6 @@ export function ChatInterface() {
   }, [])
 
   const speechRequestIdRef = useRef(0)
-
-  const handleSpeakToggle = useCallback(() => {
-    if (!profile) {
-      toast({ title: "No voice sample", description: "Upload a voice sample first." })
-      return
-    }
-
-    startToggleTransition(async () => {
-      const previous = speakBackEnabled
-      setSpeakBackEnabledLocal(!previous)
-      try {
-        const result = await setSpeakBackEnabled(!previous)
-        if (result?.error) {
-          throw new Error(result.error)
-        }
-        updateProfile(result.profile ?? { ...profile, speak_back_enabled: !previous })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        toast({ title: "Unable to update speak-back", description: message, variant: "destructive" })
-        setSpeakBackEnabledLocal(previous)
-      }
-    })
-  }, [profile, setSpeakBackEnabledLocal, speakBackEnabled, toast, updateProfile])
 
   const startAssistantTyping = useCallback(
     (text: string, token: number) => {
@@ -222,7 +197,7 @@ export function ChatInterface() {
     setLog((current) => [
       ...current,
       { role: "user", text: userText },
-      { role: "assistant", text: "", thinking: willSpeak },
+      { role: "assistant", text: "", thinking: true },
     ])
     pendingAssistantTextRef.current = ""
 
@@ -414,33 +389,48 @@ export function ChatInterface() {
   ])
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full w-full flex-col text-white">
       <div className="flex-1 overflow-y-auto p-4" ref={scrollRef}>
-        <div className="mx-auto max-w-3xl space-y-4">
-          {log.map((bubble, index) => (
-            <div key={index} className={bubble.role === "user" ? "text-right" : "text-left"}>
-              <span
-                className={`inline-block max-w-[85%] whitespace-pre-wrap rounded-lg px-4 py-3 text-sm ${
-                  bubble.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
-                }`}
-              >
-                {bubble.role === "assistant" && bubble.thinking ? (
-                  <span className="inline-flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Thinking…
-                  </span>
-                ) : (
-                  bubble.text || ""
-                )}
-              </span>
+        <div className="mx-auto flex min-h-full w-full flex-col justify-end gap-6 px-2 sm:px-6">
+          {log.map((bubble, index) => {
+            const bubbleAlignment =
+              bubble.role === "user" ? "items-end text-right" : "items-start text-left"
+            const rowAlignment =
+              bubble.role === "user" ? "justify-end pr-4 sm:pr-8" : "justify-start pl-4 sm:pl-8"
 
-              {bubble.role === "assistant" && bubble.ops && bubble.ops.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {[...bubble.ops]
-                    .sort((a, b) => {
-                      const aScore = (a.retrieved_data as any)?.[0]?.combined_score || (a.args as any).confidence || 0
-                      const bScore = (b.retrieved_data as any)?.[0]?.combined_score || (b.args as any).confidence || 0
-                      return Number(bScore) - Number(aScore)
+            return (
+              <div key={index} className={cn("flex w-full", rowAlignment)}>
+                <div className={cn("flex w-full max-w-[70%] flex-col gap-2", bubbleAlignment)}>
+                  <span
+                    className={cn(
+                      "inline-block max-w-full whitespace-pre-wrap rounded-3xl border px-5 py-3 text-sm backdrop-blur-2xl shadow-[0_25px_55px_rgba(0,0,0,0.4)]",
+                      bubble.role === "user"
+                        ? "self-end border-white/40 bg-white/25 text-white text-right"
+                        : "self-start border-white/25 bg-black/35 text-white/90 text-left",
+                    )}
+                  >
+                    {bubble.role === "assistant" && bubble.thinking ? (
+                      <span className="inline-flex items-center gap-2 text-white/80">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Thinking…
+                      </span>
+                    ) : (
+                      bubble.text || ""
+                    )}
+                  </span>
+
+                  {bubble.role === "assistant" && bubble.ops && bubble.ops.length > 0 && (
+                    <div
+                      className={cn(
+                        "flex w-full flex-wrap gap-2",
+                        bubble.role === "user" ? "justify-end text-right" : "justify-start text-left",
+                      )}
+                    >
+                      {[...bubble.ops]
+                        .sort((a, b) => {
+                          const aScore = (a.retrieved_data as any)?.[0]?.combined_score || (a.args as any).confidence || 0
+                          const bScore = (b.retrieved_data as any)?.[0]?.combined_score || (b.args as any).confidence || 0
+                          return Number(bScore) - Number(aScore)
                     })
                     .map((op) => {
                       const keyArg = typeof op.args.key === "string" ? op.args.key : undefined
@@ -466,27 +456,25 @@ export function ChatInterface() {
                           <div key={op.id} className="w-full">
                             <button
                               onClick={toggleExpanded}
-                              className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
+                              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
                             >
                               <b>{op.name === "propose_fact" ? "Proposed Fact" : "Confirmed Fact"}</b>
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                             {isExpanded && (
                               <div className="mt-1">
-                                <div className="rounded border border-amber-200 bg-amber-50/50 px-2 py-1 text-xs text-amber-600 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-400">
+                                <div className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 backdrop-blur-xl">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
-                                      <div className="mb-0.5 flex items-center gap-1">
+                                      <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-white/60">
                                         <Badge variant="outline" className="h-4 px-1 text-[10px]">
                                           fact
                                         </Badge>
                                         {typeof (op.args as any).confidence === "number" && (
-                                          <span className="text-[10px] text-muted-foreground">
-                                            {((op.args as any).confidence * 100).toFixed(0)}%
-                                          </span>
+                                          <span>{((op.args as any).confidence * 100).toFixed(0)}%</span>
                                         )}
                                       </div>
-                                      <p className="break-words">
+                                      <p className="break-words font-medium text-white">
                                         <b>{keyArg}:</b> {JSON.stringify(valueArg)}
                                       </p>
                                     </div>
@@ -503,27 +491,25 @@ export function ChatInterface() {
                           <div key={op.id} className="w-full">
                             <button
                               onClick={toggleExpanded}
-                              className="inline-flex items-center gap-1 rounded border border-teal-300 bg-teal-50 px-2 py-1 text-xs text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-400 dark:hover:bg-teal-900"
+                              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
                             >
                               <b>{op.name === "propose_episodic" ? "Proposed Memory" : "Confirmed Memory"}</b>
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                             {isExpanded && (
                               <div className="mt-1">
-                                <div className="rounded border border-teal-200 bg-teal-50/50 px-2 py-1 text-xs text-teal-600 dark:border-teal-900 dark:bg-teal-950/50 dark:text-teal-400">
+                                <div className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 backdrop-blur-xl">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
-                                      <div className="mb-0.5 flex items-center gap-1">
+                                      <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wide text-white/60">
                                         <Badge variant="outline" className="h-4 px-1 text-[10px]">
                                           episodic
                                         </Badge>
                                         {typeof (op.args as any).confidence === "number" && (
-                                          <span className="text-[10px] text-muted-foreground">
-                                            {((op.args as any).confidence * 100).toFixed(0)}%
-                                          </span>
+                                          <span>{((op.args as any).confidence * 100).toFixed(0)}%</span>
                                         )}
                                       </div>
-                                      <p className="break-words">{textArg}</p>
+                                      <p className="break-words text-white">{textArg}</p>
                                     </div>
                                   </div>
                                 </div>
@@ -541,7 +527,7 @@ export function ChatInterface() {
                           <div key={op.id} className="w-full">
                             <button
                               onClick={toggleExpanded}
-                              className="inline-flex items-center gap-1 rounded border border-purple-300 bg-purple-50 px-2 py-1 text-xs text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-400 dark:hover:bg-purple-900"
+                              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
                             >
                               <b>Remembered</b> • {facts.length} fact(s)
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -554,7 +540,7 @@ export function ChatInterface() {
                                   .map((fact, factIndex) => (
                                     <div
                                       key={factIndex}
-                                      className="rounded border border-purple-200 bg-purple-50/50 px-2 py-1 text-xs text-purple-600 dark:border-purple-900 dark:bg-purple-950/50 dark:text-purple-400"
+                                      className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 backdrop-blur-xl"
                                       title={JSON.stringify(fact)}
                                     >
                                       <div className="flex items-start justify-between gap-2">
@@ -564,12 +550,12 @@ export function ChatInterface() {
                                               fact
                                             </Badge>
                                             {fact.confidence && (
-                                              <span className="text-[10px] text-muted-foreground">
+                                              <span className="text-[10px] text-white/60">
                                                 {(Number(fact.confidence) * 100).toFixed(0)}%
                                               </span>
                                             )}
                                           </div>
-                                          <p className="line-clamp-2">
+                                          <p className="line-clamp-2 text-white">
                                             <b>{fact.key}:</b> {JSON.stringify(fact.value)}
                                           </p>
                                         </div>
@@ -580,7 +566,7 @@ export function ChatInterface() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-6 w-full text-xs"
+                                    className="h-6 w-full rounded-full border border-white/15 bg-white/5 text-xs text-white/80 backdrop-blur-xl hover:bg-white/15"
                                     onClick={(event) => {
                                       event.stopPropagation()
                                       setExpandedOps((prev) => new Set(prev).add(op.id))
@@ -594,7 +580,6 @@ export function ChatInterface() {
                           </div>
                         )
                       }
-
                       if (op.name === "search_memory" && Array.isArray(op.retrieved_data)) {
                         const results = op.retrieved_data as Array<Record<string, any>>
                         const displayCount = isExpanded ? results.length : 3
@@ -603,7 +588,7 @@ export function ChatInterface() {
                           <div key={op.id} className="w-full">
                             <button
                               onClick={toggleExpanded}
-                              className="inline-flex items-center gap-1 rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-900"
+                              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
                             >
                               <b>Remembered</b> • {results.length} item(s)
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -616,7 +601,7 @@ export function ChatInterface() {
                                   .map((item, itemIndex) => (
                                     <div
                                       key={itemIndex}
-                                      className="rounded border border-blue-200 bg-blue-50/50 px-2 py-1 text-xs text-blue-600 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-400"
+                                      className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 backdrop-blur-xl"
                                       title={JSON.stringify(item)}
                                     >
                                       <div className="flex items-start justify-between gap-2">
@@ -626,12 +611,12 @@ export function ChatInterface() {
                                               {item.source}
                                             </Badge>
                                             {item.combined_score && (
-                                              <span className="text-[10px] text-muted-foreground">
+                                              <span className="text-[10px] text-white/60">
                                                 {(Number(item.combined_score) * 100).toFixed(0)}%
                                               </span>
                                             )}
                                           </div>
-                                          <p className="line-clamp-2">{item.text}</p>
+                                          <p className="line-clamp-2 text-white/90">{item.text}</p>
                                         </div>
                                       </div>
                                     </div>
@@ -640,7 +625,7 @@ export function ChatInterface() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-6 w-full text-xs"
+                                    className="h-6 w-full rounded-full border border-white/15 bg-white/5 text-xs text-white/80 backdrop-blur-xl hover:bg-white/15"
                                     onClick={(event) => {
                                       event.stopPropagation()
                                       setExpandedOps((prev) => new Set(prev).add(op.id))
@@ -654,18 +639,20 @@ export function ChatInterface() {
                           </div>
                         )
                       }
-
                       const statusColor =
                         op.status === "error"
-                          ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"
+                          ? "border-red-400/60 bg-red-500/20"
                           : op.status === "ignored"
-                              ? "border-gray-300 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
-                              : "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400"
+                              ? "border-white/25 bg-white/5"
+                              : "border-emerald-300/60 bg-emerald-400/20"
 
                       return (
                         <span
                           key={op.id}
-                          className={`rounded border px-2 py-1 text-xs ${statusColor}`}
+                          className={cn(
+                            "rounded-full px-3 py-1 text-xs text-white/80 backdrop-blur-xl",
+                            statusColor,
+                          )}
                           title={JSON.stringify(op.args)}
                         >
                           <b>{op.name}</b>
@@ -675,57 +662,53 @@ export function ChatInterface() {
                         </span>
                       )
                     })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      <div className="flex-shrink-0 border-t p-4">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            void send()
-          }}
-          className="mx-auto flex max-w-3xl gap-2"
-        >
-          <Button
-            type="button"
-            variant={speakEnabled ? "default" : "outline"}
-            onClick={handleSpeakToggle}
-            disabled={togglePending || !profile}
-            className="gap-2"
-          >
-            {togglePending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : speakEnabled ? (
-              <>
-                <Volume2 className="h-4 w-4" /> Speak
-              </>
-            ) : (
-              <>
-                <VolumeX className="h-4 w-4" /> Muted
-              </>
-            )}
-          </Button>
-          <Input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Type a message..."
-            disabled={busy}
-            className="flex-1"
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault()
-                void send()
-              }
+      <div className="flex-shrink-0 p-4">
+        <div className="mx-auto flex w-full justify-center">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              void send()
             }}
-          />
-          <Button type="submit" disabled={busy || !input.trim()}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
-        </form>
+            className="flex w-full max-w-4xl items-center gap-3 rounded-[28px] border border-white/20 bg-white/10 px-5 py-2 backdrop-blur-3xl shadow-[0_25px_65px_rgba(0,0,0,0.55)]"
+          >
+            <Input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Type a message..."
+              disabled={busy}
+              className="flex-1 !border-none !bg-transparent !shadow-none px-0 text-white placeholder:text-white/30 focus-visible:ring-0 focus-visible:border-none focus-visible:ring-offset-0"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  void send()
+                }
+              }}
+            />
+            <Button
+              type="submit"
+              disabled={busy || !input.trim()}
+              className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-white/15 text-white/90 shadow-[0_15px_35px_rgba(0,0,0,0.35)] hover:bg-white/25 backdrop-blur-3xl transition"
+              style={{ transform: busy ? "translate(-1px, -1px)" : "translate(-1px, -1px)" }}
+            >
+              <span className="flex items-center justify-center" style={{ transform: "translate(-1px, 0)" }}>
+                {busy ? (
+                  <Loader2 className="h-7 w-7 text-white animate-spin" />
+                ) : (
+                  <Send className="h-7 w-7 text-white" strokeWidth={0} fill="currentColor" />
+                )}
+              </span>
+            </Button>
+          </form>
+        </div>
       </div>
       <AudioProgressBar />
     </div>

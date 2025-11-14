@@ -1,10 +1,12 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
+import type { CSSProperties } from "react"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { GripVertical } from "lucide-react"
 import type { VoiceFilterStyle } from "@/components/voice-clone-provider"
+import { cn } from "@/lib/utils"
 
 interface MeshData {
   vertices: number[][]
@@ -25,6 +27,10 @@ interface DraggableAvatarProps {
   audioUrl: string | null
   onPositionChange?: (position: { x: number; y: number }) => void
   styleMode?: VoiceFilterStyle
+  draggable?: boolean
+  className?: string
+  style?: CSSProperties
+  frameless?: boolean
 }
 
 export function DraggableAvatar({
@@ -34,6 +40,10 @@ export function DraggableAvatar({
   audioUrl,
   onPositionChange,
   styleMode = "none",
+  draggable = true,
+  className,
+  style,
+  frameless = false,
 }: DraggableAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -52,6 +62,7 @@ export function DraggableAvatar({
   } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [position, setPosition] = useState({ x: 20, y: 20 })
+  const isDraggable = draggable !== false
   const dragStartRef = useRef({ x: 0, y: 0 })
 
   // Initialize Three.js scene
@@ -380,16 +391,20 @@ export function DraggableAvatar({
   }, [audioUrl])
 
   // Drag handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.target !== e.currentTarget && !(e.target as HTMLElement).closest('[data-drag-handle]')) {
-      return
-    }
-    setIsDragging(true)
-    dragStartRef.current = {
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    }
-  }, [position])
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isDraggable) return
+      if (e.target !== e.currentTarget && !(e.target as HTMLElement).closest('[data-drag-handle]')) {
+        return
+      }
+      setIsDragging(true)
+      dragStartRef.current = {
+        x: e.clientX - position.x,
+        y: e.clientY - position.y,
+      }
+    },
+    [isDraggable, position],
+  )
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isDragging) return
@@ -452,39 +467,65 @@ export function DraggableAvatar({
   }, [isCRT])
 
   const canvasMask =
-    "radial-gradient(circle at center, rgba(0,0,0,1) 45%, rgba(0,0,0,0.7) 62%, rgba(0,0,0,0.2) 74%, rgba(0,0,0,0) 88%)"
+    "radial-gradient(circle at center, rgba(0,0,0,1) 42%, rgba(0,0,0,0.9) 60%, rgba(0,0,0,0.2) 75%, rgba(0,0,0,0) 88%)"
   const canvasFilter = isCRT
     ? "grayscale(0.15) contrast(1.6) brightness(0.8) hue-rotate(110deg) saturate(1.4)"
     : "contrast(1.05) brightness(0.95)"
 
+  const frameClasses = frameless
+    ? ""
+    : isCRT
+      ? "border-emerald-500/60 shadow-[0_0_25px_rgba(0,255,120,0.35)]"
+      : "border-primary/30"
+
+  const containerClasses = cn(
+    "w-64 h-64 overflow-hidden bg-black",
+    frameless ? "" : "rounded-lg border-2 shadow-lg",
+    isDraggable ? "fixed z-50 cursor-move" : "relative",
+    frameClasses,
+    className,
+  )
+
+  const defaultShadow =
+    !frameless && isCRT ? "0 0 40px rgba(0,150,80,0.45), inset 0 0 25px rgba(0,120,60,0.4)" : undefined
+
+  const containerStyle: CSSProperties = {
+    ...(isDraggable
+      ? {
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+        }
+      : {}),
+    ...(defaultShadow ? { boxShadow: defaultShadow } : {}),
+    ...style,
+  }
+
+  const maskImage = frameless ? "none" : canvasMask
+
   return (
     <div
       ref={containerRef}
-      className={`fixed z-50 w-64 h-64 overflow-hidden rounded-lg border-2 shadow-lg cursor-move bg-black ${
-        isCRT ? "border-emerald-500/60 shadow-[0_0_25px_rgba(0,255,120,0.35)]" : "border-primary/30"
-      }`}
-      style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        boxShadow: isCRT ? "0 0 40px rgba(0,150,80,0.45), inset 0 0 25px rgba(0,120,60,0.4)" : undefined,
-      }}
-      onMouseDown={handleMouseDown}
+      className={containerClasses}
+      style={containerStyle}
+      onMouseDown={isDraggable ? handleMouseDown : undefined}
     >
-      <div
-        data-drag-handle
-        className="absolute top-2 left-2 flex items-center gap-1 text-muted-foreground cursor-grab active:cursor-grabbing"
-      >
-        <GripVertical className="h-4 w-4" />
-        <span className="text-xs">Avatar</span>
-      </div>
+      {isDraggable && (
+        <div
+          data-drag-handle
+          className="absolute top-2 left-2 flex items-center gap-1 text-muted-foreground cursor-grab active:cursor-grabbing"
+        >
+          <GripVertical className="h-4 w-4" />
+          <span className="text-xs">Avatar</span>
+        </div>
+      )}
       {crtOverlay}
       <canvas
         ref={canvasRef}
         className={`relative z-10 h-full w-full ${isCRT ? "mix-blend-screen" : ""}`}
         style={{
           display: "block",
-          WebkitMaskImage: canvasMask,
-          maskImage: canvasMask,
+          WebkitMaskImage: maskImage,
+          maskImage: maskImage,
           filter: canvasFilter,
         }}
       />

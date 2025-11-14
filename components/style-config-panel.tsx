@@ -298,8 +298,6 @@ export function StyleConfigPanel({
                   onChange={(e) => handleConversationChange(e.target.value)}
                 />
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Input type="file" accept=".txt,.text,.log" onChange={handleConversationUpload} className="max-w-[220px] text-xs" />
-                  {fileName && <span className="text-xs">Loaded: {fileName}</span>}
                   <Button
                     size="sm"
                     variant="outline"
@@ -557,7 +555,7 @@ export function StyleConfigPanel({
                 </CardContent>
               </Card>
 
-              {localStyle.example_messages && localStyle.example_messages.length > 0 && (
+              {false && localStyle.example_messages && localStyle.example_messages.length > 0 && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm">Example Messages</CardTitle>
