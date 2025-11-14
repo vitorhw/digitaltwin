@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ChevronDown, ChevronUp, Loader2, Send } from "lucide-react"
+import { CaretDown, CaretUp, PaperPlaneTilt, SpinnerGap } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -411,7 +411,7 @@ export function ChatInterface() {
                   >
                     {bubble.role === "assistant" && bubble.thinking ? (
                       <span className="inline-flex items-center gap-2 text-white/80">
-                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <SpinnerGap className="h-3 w-3 animate-spin" />
                         Thinking…
                       </span>
                     ) : (
@@ -454,12 +454,12 @@ export function ChatInterface() {
                       if (op.name === "propose_fact" || op.name === "confirm_fact") {
                         return (
                           <div key={op.id} className="w-full">
-                            <button
-                              onClick={toggleExpanded}
-                              className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
-                            >
-                              <b>{op.name === "propose_fact" ? "Proposed Fact" : "Confirmed Fact"}</b>
-                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        <button
+                          onClick={toggleExpanded}
+                          className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
+                        >
+                          <b>{op.name === "propose_fact" ? "Proposed Fact" : "Confirmed Fact"}</b>
+                          {isExpanded ? <CaretUp className="h-3 w-3" /> : <CaretDown className="h-3 w-3" />}
                             </button>
                             {isExpanded && (
                               <div className="mt-1">
@@ -494,7 +494,7 @@ export function ChatInterface() {
                               className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
                             >
                               <b>{op.name === "propose_episodic" ? "Proposed Memory" : "Confirmed Memory"}</b>
-                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                              {isExpanded ? <CaretUp className="h-3 w-3" /> : <CaretDown className="h-3 w-3" />}
                             </button>
                             {isExpanded && (
                               <div className="mt-1">
@@ -530,7 +530,7 @@ export function ChatInterface() {
                               className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
                             >
                               <b>Remembered</b> • {facts.length} fact(s)
-                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                              {isExpanded ? <CaretUp className="h-3 w-3" /> : <CaretDown className="h-3 w-3" />}
                             </button>
                             {isExpanded && facts.length > 0 && (
                               <div className="mt-1 space-y-1">
@@ -591,7 +591,7 @@ export function ChatInterface() {
                               className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-xl transition hover:bg-white/20"
                             >
                               <b>Remembered</b> • {results.length} item(s)
-                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                              {isExpanded ? <CaretUp className="h-3 w-3" /> : <CaretDown className="h-3 w-3" />}
                             </button>
                             {isExpanded && results.length > 0 && (
                               <div className="mt-1 space-y-1">
@@ -701,9 +701,9 @@ export function ChatInterface() {
             >
               <span className="flex items-center justify-center" style={{ transform: "translate(-1px, 0)" }}>
                 {busy ? (
-                  <Loader2 className="h-7 w-7 text-white animate-spin" />
+                  <SpinnerGap className="h-7 w-7 text-white animate-spin" />
                 ) : (
-                  <Send className="h-7 w-7 text-white" strokeWidth={0} fill="currentColor" />
+                  <PaperPlaneTilt className="h-7 w-7 text-white" weight="fill" />
                 )}
               </span>
             </Button>

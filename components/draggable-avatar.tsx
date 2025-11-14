@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import type { CSSProperties } from "react"
 import * as THREE from "three"
+import { MathUtils } from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
-import { GripVertical } from "lucide-react"
+import { DotsSixVertical } from "@phosphor-icons/react"
 import type { VoiceFilterStyle } from "@/components/voice-clone-provider"
 import { cn } from "@/lib/utils"
 
@@ -31,6 +32,8 @@ interface DraggableAvatarProps {
   className?: string
   style?: CSSProperties
   frameless?: boolean
+  interactionTarget?: HTMLElement | null
+  aim?: { x: number; y: number } | null
 }
 
 export function DraggableAvatar({
@@ -44,7 +47,14 @@ export function DraggableAvatar({
   className,
   style,
   frameless = false,
+  interactionTarget = null,
+  aim = null,
 }: DraggableAvatarProps) {
+  const azimuthLimit = MathUtils.degToRad(30)
+  const minPolarAngle = Math.PI * 0.45
+  const maxPolarAngle = Math.PI * 0.55
+  const polarCenter = (minPolarAngle + maxPolarAngle) / 2
+  const polarRange = (maxPolarAngle - minPolarAngle) / 2
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sceneRef = useRef<{
@@ -64,6 +74,11 @@ export function DraggableAvatar({
   const [position, setPosition] = useState({ x: 20, y: 20 })
   const isDraggable = draggable !== false
   const dragStartRef = useRef({ x: 0, y: 0 })
+  const lastInteractionElement = useRef<HTMLElement | null>(null)
+  const desiredAnglesRef = useRef<{ azimuth: number; polar: number }>({
+    azimuth: 0,
+    polar: polarCenter,
+  })
 
   // Initialize Three.js scene
   useEffect(() => {
@@ -79,8 +94,14 @@ export function DraggableAvatar({
     
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enablePan = false
-    controls.minPolarAngle = Math.PI * 0.45
-    controls.maxPolarAngle = Math.PI * 0.55
+    controls.enableZoom = false
+    controls.enableDamping = true
+    controls.dampingFactor = 0.08
+    controls.rotateSpeed = 0.6
+    controls.minPolarAngle = minPolarAngle
+    controls.maxPolarAngle = maxPolarAngle
+    controls.minAzimuthAngle = -azimuthLimit
+    controls.maxAzimuthAngle = azimuthLimit
 
     // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.6))
@@ -114,11 +135,31 @@ export function DraggableAvatar({
       rafId: null,
     }
 
+    const offset = new THREE.Vector3()
+    const spherical = new THREE.Spherical()
+
     const animate = () => {
       const state = sceneRef.current
       if (!state) return
 
       state.rafId = requestAnimationFrame(animate)
+
+      if (state.controls) {
+        const controls = state.controls
+        const desired = desiredAnglesRef.current
+        const currentAz = controls.getAzimuthalAngle()
+        const currentPolar = controls.getPolarAngle()
+        const nextAz = currentAz + (desired.azimuth - currentAz) * 0.15
+        const nextPolar = currentPolar + (desired.polar - currentPolar) * 0.15
+
+        offset.copy(controls.object.position).sub(controls.target)
+        const radius = offset.length() || 1
+        spherical.set(radius, nextPolar, nextAz)
+        offset.setFromSpherical(spherical)
+        controls.object.position.copy(controls.target).add(offset)
+        controls.object.lookAt(controls.target)
+        controls.update()
+      }
 
       if (state.mesh && state.analyser && state.origPos && state.lowerLipIdx.length) {
         const N = 256
@@ -181,6 +222,43 @@ export function DraggableAvatar({
     }
   }, [])
 
+  useEffect(() => {
+    const state = sceneRef.current
+    if (!state?.controls || !state.renderer) {
+      return
+    }
+
+    if (interactionTarget === lastInteractionElement.current) {
+      return
+    }
+
+    state.controls.disconnect()
+    const nextTarget = interactionTarget ?? state.renderer.domElement
+    state.controls.connect(nextTarget)
+    lastInteractionElement.current = interactionTarget ?? null
+
+    return () => {
+      const currentState = sceneRef.current
+      if (!currentState?.controls || !currentState.renderer) {
+        return
+      }
+      if (interactionTarget === lastInteractionElement.current) {
+        currentState.controls.disconnect()
+        currentState.controls.connect(currentState.renderer.domElement)
+        lastInteractionElement.current = null
+      }
+    }
+  }, [interactionTarget])
+
+  useEffect(() => {
+    const x = MathUtils.clamp(aim?.x ?? 0, -1, 1)
+    const y = MathUtils.clamp(aim?.y ?? 0, -1, 1)
+    desiredAnglesRef.current = {
+      azimuth: x * azimuthLimit,
+      polar: polarCenter + y * polarRange,
+    }
+  }, [aim, azimuthLimit, polarCenter, polarRange])
+
   // Build mesh from JSON data
   const buildMeshFromJSON = useCallback((data: MeshData) => {
     const verts = data.vertices
@@ -209,6 +287,23 @@ export function DraggableAvatar({
     geometry.setAttribute("uv", new THREE.BufferAttribute(flatUv, 2))
     geometry.setIndex(new THREE.BufferAttribute(idx, 1))
     geometry.computeVertexNormals()
+    geometry.computeBoundingBox()
+
+    if (geometry.boundingBox) {
+      const center = new THREE.Vector3()
+      geometry.boundingBox.getCenter(center)
+      geometry.translate(-center.x, -center.y, -center.z)
+
+      const size = new THREE.Vector3()
+      geometry.boundingBox.getSize(size)
+      const largest = Math.max(size.x, size.y, size.z)
+      const targetSize = 0.9
+      if (largest > 0) {
+        const scale = targetSize / largest
+        geometry.scale(scale, scale, scale)
+      }
+    }
+
     return geometry
   }, [])
 
@@ -237,7 +332,11 @@ export function DraggableAvatar({
     }
 
     const geometry = buildMeshFromJSON(meshData)
-    const mat = new THREE.MeshPhongMaterial({ side: THREE.DoubleSide })
+    const mat = new THREE.MeshPhongMaterial({
+      side: THREE.DoubleSide,
+      transparent: true,
+      shininess: 28,
+    })
 
     if (textureUrl) {
       const tex = new THREE.TextureLoader().load(textureUrl)
@@ -245,6 +344,56 @@ export function DraggableAvatar({
       mat.map = tex
     } else {
       mat.color = new THREE.Color(0xdddddd)
+    }
+
+    const fadeUniforms = {
+      fadeRadius: { value: 0.46 },
+      fadeSoftness: { value: 0.22 },
+      fadeHorizontal: { value: 1.15 },
+      fadeVertical: { value: 0.75 },
+    }
+
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.fadeRadius = fadeUniforms.fadeRadius
+      shader.uniforms.fadeSoftness = fadeUniforms.fadeSoftness
+      shader.uniforms.fadeHorizontal = fadeUniforms.fadeHorizontal
+      shader.uniforms.fadeVertical = fadeUniforms.fadeVertical
+
+      shader.vertexShader =
+        `
+        varying vec3 vModelPosition;
+      ` + shader.vertexShader
+
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        `
+        #include <begin_vertex>
+        vModelPosition = transformed;
+      `,
+      )
+
+      shader.fragmentShader =
+        `
+        varying vec3 vModelPosition;
+        uniform float fadeRadius;
+        uniform float fadeSoftness;
+        uniform float fadeHorizontal;
+        uniform float fadeVertical;
+      ` + shader.fragmentShader
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <dithering_fragment>",
+        `
+        vec2 scaledPos = vec2(vModelPosition.x * fadeHorizontal, vModelPosition.y * fadeVertical);
+        float distFromCenter = length(scaledPos);
+        float fadeStart = max(0.0, fadeRadius - fadeSoftness);
+        float fadeAmount = smoothstep(fadeStart, fadeRadius, distFromCenter);
+        float edgeFeather = 1.0 - fadeAmount;
+        gl_FragColor.a *= edgeFeather;
+        gl_FragColor.rgb = mix(vec3(0.05, 0.08, 0.07), gl_FragColor.rgb, edgeFeather);
+        #include <dithering_fragment>
+      `,
+      )
     }
 
     const mesh = new THREE.Mesh(geometry, mat)
@@ -467,7 +616,7 @@ export function DraggableAvatar({
   }, [isCRT])
 
   const canvasMask =
-    "radial-gradient(circle at center, rgba(0,0,0,1) 42%, rgba(0,0,0,0.9) 60%, rgba(0,0,0,0.2) 75%, rgba(0,0,0,0) 88%)"
+    "radial-gradient(circle at center, rgba(0,0,0,1) 32%, rgba(0,0,0,0.92) 52%, rgba(0,0,0,0.25) 72%, rgba(0,0,0,0) 86%)"
   const canvasFilter = isCRT
     ? "grayscale(0.15) contrast(1.6) brightness(0.8) hue-rotate(110deg) saturate(1.4)"
     : "contrast(1.05) brightness(0.95)"
@@ -514,7 +663,7 @@ export function DraggableAvatar({
           data-drag-handle
           className="absolute top-2 left-2 flex items-center gap-1 text-muted-foreground cursor-grab active:cursor-grabbing"
         >
-          <GripVertical className="h-4 w-4" />
+          <DotsSixVertical className="h-4 w-4" />
           <span className="text-xs">Avatar</span>
         </div>
       )}

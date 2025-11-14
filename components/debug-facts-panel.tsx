@@ -19,7 +19,7 @@ import {
   getDocuments,
   deleteDocument,
   insertDocumentChunk,
-  hybridSearch,
+  hybridMagnifyingGlass,
   checkDatabaseFunctions,
   wipeAllUserData,
   type DiagnosticsArtifacts,
@@ -29,7 +29,7 @@ import { useAvatar } from "@/components/avatar-context"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Trash2, AlertCircle, AlertTriangle, Loader2, Search } from "lucide-react"
+import { Trash, WarningCircle, Warning, SpinnerGap, MagnifyingGlass } from '@phosphor-icons/react'
 import { useToast } from "@/hooks/use-toast"
 import { useVoiceClone } from "@/components/voice-clone-provider"
 import { CoquiConsole } from "@/components/coqui-console"
@@ -326,25 +326,25 @@ export function DebugFactsPanel({
     setLoading(false)
   }, [refreshAll, toast])
 
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<any[]>([])
-  const [searching, setSearching] = useState(false)
+  const [searchQuery, setMagnifyingGlassQuery] = useState("")
+  const [searchResults, setMagnifyingGlassResults] = useState<any[]>([])
+  const [searching, setMagnifyingGlassing] = useState(false)
 
-  const handleSearch = async () => {
+  const handleMagnifyingGlass = async () => {
     if (!searchQuery.trim()) {
       toast({ title: "Need a query", description: "Type anything to search memories.", variant: "destructive" })
       return
     }
 
-    setSearching(true)
-    const result = await hybridSearch(searchQuery, 12)
+    setMagnifyingGlassing(true)
+    const result = await hybridMagnifyingGlass(searchQuery, 12)
     if (result.results) {
-      setSearchResults(result.results)
-      toast({ title: "Search complete", description: `Found ${result.results.length} entries.` })
+      setMagnifyingGlassResults(result.results)
+      toast({ title: "MagnifyingGlass complete", description: `Found ${result.results.length} entries.` })
     } else {
       toast({ title: "Error", description: result.error, variant: "destructive" })
     }
-    setSearching(false)
+    setMagnifyingGlassing(false)
   }
 
   useEffect(() => {
@@ -439,7 +439,7 @@ export function DebugFactsPanel({
             className="h-8 justify-start gap-1"
             disabled={loading}
           >
-            <AlertCircle className="mr-2 h-4 w-4" />
+            <WarningCircle className="mr-2 h-4 w-4" />
             Check systems
           </Button>
           <Button
@@ -457,7 +457,7 @@ export function DebugFactsPanel({
             className="h-8 justify-start gap-1"
             disabled={loading}
           >
-            <AlertTriangle className="mr-2 h-4 w-4" />
+            <Warning className="mr-2 h-4 w-4" />
             Wipe data
           </Button>
           {onWipeConfigurations && (
@@ -479,7 +479,7 @@ export function DebugFactsPanel({
               className="h-8 justify-start gap-1"
               disabled={loading || wipingConfigs}
             >
-              {wipingConfigs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              {wipingConfigs ? <SpinnerGap className="mr-2 h-4 w-4 animate-spin" /> : <Trash className="mr-2 h-4 w-4" />}
               Reset setup
             </Button>
           )}
@@ -502,12 +502,12 @@ export function DebugFactsPanel({
           <div className="flex gap-2">
             <Input
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search facts, memories, docs..."
+              onChange={(e) => setMagnifyingGlassQuery(e.target.value)}
+              placeholder="MagnifyingGlass facts, memories, docs..."
               className="h-8 text-xs"
             />
-            <Button onClick={handleSearch} disabled={searching} size="sm" className="h-8 px-3 text-[11px]">
-              {searching ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Search className="mr-1 h-4 w-4" />}
+            <Button onClick={handleMagnifyingGlass} disabled={searching} size="sm" className="h-8 px-3 text-[11px]">
+              {searching ? <SpinnerGap className="mr-1 h-4 w-4 animate-spin" /> : <MagnifyingGlass className="mr-1 h-4 w-4" />}
               Go
             </Button>
           </div>

@@ -58,7 +58,7 @@
     "expo-file-system": "latest",
     "expo-gl": "latest",
     "input-otp": "1.4.1",
-    "lucide-react": "^0.454.0",
+    "@phosphor-icons/react": "^2.1.6",
     "nanoid": "^5.1.6",
     "next": "15.5.6",
     "next-themes": "latest",

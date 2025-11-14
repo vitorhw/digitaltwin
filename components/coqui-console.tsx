@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState, type ChangeEvent } from "react"
-import { Loader2, Play, Square, Volume2 } from "lucide-react"
+import { SpinnerGap, Play, Square, SpeakerHigh } from '@phosphor-icons/react'
 import { Button } from "@/components/ui/button"
 import { useVoiceClone } from "@/components/voice-clone-provider"
 
@@ -44,7 +44,7 @@ export function CoquiConsole() {
         <div className="flex items-center gap-2">
           <Button onClick={handleSpeak} disabled={!ready || !text.trim() || previewing} className="gap-2">
             {previewing || isSynthesizing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <SpinnerGap className="h-4 w-4 animate-spin" />
             ) : (
               <Play className="h-4 w-4" />
             )}
@@ -68,7 +68,7 @@ export function CoquiConsole() {
 
       <section className="space-y-2 rounded border bg-muted/30 p-3 text-xs text-muted-foreground">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <Volume2 className="h-4 w-4" /> Clone Status
+          <SpeakerHigh className="h-4 w-4" /> Clone Status
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>

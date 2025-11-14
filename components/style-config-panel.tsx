@@ -16,7 +16,7 @@ import {
   analyzeStyleFromConversation,
   type CommunicationStyle,
 } from "@/app/actions/style"
-import { Loader2, Trash2, Plus, X, Save, Upload } from "lucide-react"
+import { SpinnerGap, Trash, Plus, X, FloppyDisk, UploadSimple } from "@phosphor-icons/react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -89,9 +89,9 @@ export function StyleConfigPanel({
     setLoading(false)
   }
 
-  const handleSave = async () => {
+  const handleFloppyDisk = async () => {
     if (!localStyle) return
-    const payload = sanitizeStyleForSave(localStyle)
+    const payload = sanitizeStyleForFloppyDisk(localStyle)
     if (!payload) return
     setSaving(true)
     const result = await updateCommunicationStyle(payload)
@@ -170,7 +170,7 @@ export function StyleConfigPanel({
     setSelectedSpeaker("")
   }
 
-  const handleConversationUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleConversationUploadSimple = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
     setFileName(file.name)
@@ -241,16 +241,16 @@ export function StyleConfigPanel({
     setHasChanges(true)
   }
 
-  const sanitizeStyleForSave = (styleToSave: CommunicationStyle | null) => {
-    if (!styleToSave) return null
-    const { id: _id, user_id: _userId, created_at: _created, updated_at: _updated, ...rest } = styleToSave
+  const sanitizeStyleForFloppyDisk = (styleToFloppyDisk: CommunicationStyle | null) => {
+    if (!styleToFloppyDisk) return null
+    const { id: _id, user_id: _userId, created_at: _created, updated_at: _updated, ...rest } = styleToFloppyDisk
     return rest
   }
 
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-6 w-6 animate-spin" />
+        <SpinnerGap className="h-6 w-6 animate-spin" />
       </div>
     )
   }
@@ -266,12 +266,12 @@ export function StyleConfigPanel({
           <div className="flex flex-wrap gap-2">
             {localStyle && (
               <>
-                <Button onClick={handleSave} disabled={saving || !hasChanges} size="sm" variant="default">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                  Save
+                <Button onClick={handleFloppyDisk} disabled={saving || !hasChanges} size="sm" variant="default">
+                  {saving ? <SpinnerGap className="h-4 w-4 animate-spin mr-2" /> : <FloppyDisk className="h-4 w-4 mr-2" />}
+                  FloppyDisk
                 </Button>
                 <Button onClick={handleDelete} variant="destructive" size="sm">
-                  <Trash2 className="h-4 w-4" />
+                  <Trash className="h-4 w-4" />
                 </Button>
               </>
             )}
@@ -281,40 +281,41 @@ export function StyleConfigPanel({
 
       <div className="flex-1 overflow-y-auto min-h-0 p-4">
         <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Jump-start from a conversation</CardTitle>
-              <CardDescription className="text-xs">
+          <section className="rounded-3xl border border-emerald-900/40 bg-emerald-950/20 p-6 shadow-[0_25px_55px_rgba(0,0,0,0.4)]">
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold text-emerald-100">Jump-start from a conversation</h4>
+              <p className="text-xs text-emerald-200/80">
                 Paste a WhatsApp/Discord thread or upload a .txt export. We&apos;ll detect participants and autofill your style.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+              </p>
+            </div>
+            <div className="space-y-4 text-white">
               <div className="space-y-2">
-                <Label className="text-xs">Conversation Transcript</Label>
+                <Label className="text-xs text-emerald-100">Conversation Transcript</Label>
                 <Textarea
                   placeholder="Paste a chat log here…"
-                  className="text-xs min-h-[140px]"
+                  className="text-xs min-h-[140px] border border-emerald-900/60 bg-black/40"
                   value={conversationInput}
                   onChange={(e) => handleConversationChange(e.target.value)}
                 />
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-200">
                   <Button
                     size="sm"
                     variant="outline"
+                    className="border-emerald-500/70 text-emerald-100 hover:bg-emerald-900/40"
                     onClick={handleDetectSpeakers}
                     disabled={detectingSpeakers || !conversationInput.trim()}
                   >
-                    {detectingSpeakers ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
+                    {detectingSpeakers ? <SpinnerGap className="h-4 w-4 animate-spin mr-2" /> : <UploadSimple className="h-4 w-4 mr-2" />}
                     Detect speakers
                   </Button>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label className="text-xs">Who are you in this conversation?</Label>
+                <Label className="text-xs text-emerald-100">Who are you in this conversation?</Label>
                 {speakerOptions.length > 0 && (
                   <Select value={selectedSpeaker} onValueChange={setSelectedSpeaker}>
-                    <SelectTrigger className="text-xs">
+                    <SelectTrigger className="text-xs border border-emerald-900/60 bg-black/30 text-white">
                       <SelectValue placeholder="Select your display name" />
                     </SelectTrigger>
                     <SelectContent>
@@ -330,19 +331,20 @@ export function StyleConfigPanel({
                   placeholder="Type your name/handle as it appears"
                   value={selectedSpeaker}
                   onChange={(e) => setSelectedSpeaker(e.target.value)}
-                  className="text-xs"
+                  className="text-xs border border-emerald-900/60 bg-black/30 text-white"
                 />
                 <Button
                   onClick={handleAnalyzeConversation}
                   size="sm"
+                  className="bg-emerald-600 text-white hover:bg-emerald-500"
                   disabled={analyzingConversation || !conversationInput.trim() || !selectedSpeaker.trim()}
                 >
-                  {analyzingConversation ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  {analyzingConversation ? <SpinnerGap className="h-4 w-4 animate-spin mr-2" /> : null}
                   Analyze conversation
                 </Button>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
 
           {!localStyle ? (
             <Card>

@@ -20,7 +20,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -41,10 +40,26 @@ import { VoiceSettingsPanel } from "@/components/voice-settings-panel";
 import { useToast } from "@/hooks/use-toast";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import {
+  Bug,
+  CheckCircle,
+  DotsThreeCircle,
+  PenNibStraight,
+  SignOut,
+  Sphere,
+  Waveform,
+} from "@phosphor-icons/react";
 import Image from "next/image";
-import { CircleEllipsis, LogOut, Volume2, VolumeX } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 const TV_FRAME_WIDTH = 547;
 const TV_FRAME_HEIGHT = 467;
@@ -54,6 +69,14 @@ const TV_SCREEN = {
   offsetX: 26,
   offsetY: 35,
 };
+const NOISE_DATA_URI = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">
+    <filter id="grain-noise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.95" numOctaves="2" seed="8"/>
+    </filter>
+    <rect width="100%" height="100%" filter="url(#grain-noise)"/>
+  </svg>`
+)}`;
 
 interface SinglePageAppProps {
   isLoggedIn: boolean;
@@ -201,31 +224,34 @@ function AuthenticatedApp({
     if (!styleReady) return "style";
     return "chat";
   });
-  const gatingPage: PageView | null = !voiceComplete
-    ? "voice"
-    : !avatarReady
-    ? "avatar"
-    : !styleReady
-    ? "style"
-    : null;
-  const currentPage: PageView = gatingPage ?? selectedPage;
+  const currentPage: PageView = selectedPage;
   const [debugOpen, setDebugOpen] = useState(false);
   const [speakTogglePending, setSpeakTogglePending] = useState(false);
   const [menuValue, setMenuValue] = useState<string>("menu");
+  const [tvScreenRect, setTvScreenRect] = useState<DOMRect | null>(null);
+  const [avatarInteractionElement, setAvatarInteractionElement] =
+    useState<HTMLElement | null>(null);
+  const [chatInteractionLocked, setChatInteractionLocked] = useState(false);
+  const [avatarAim, setAvatarAim] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
 
   const handleNav = useCallback(
     (page: PageView) => {
-      if (gatingPage && page !== gatingPage) return;
-      if (page === "avatar" && !voiceComplete) return;
-      if (page === "style" && (!voiceComplete || !avatarReady)) return;
-      if (
-        (page === "chat" || page === "mindmap") &&
-        (!voiceComplete || !avatarReady || !styleReady)
-      )
-        return;
+      const canNavigate =
+        page === "voice" ||
+        (page === "avatar" && voiceComplete) ||
+        (page === "style" && voiceComplete && avatarReady) ||
+        ((page === "chat" || page === "mindmap") &&
+          voiceComplete &&
+          avatarReady &&
+          styleReady);
+
+      if (!canNavigate) return;
       setSelectedPage(page);
     },
-    [avatarReady, gatingPage, styleReady, voiceComplete]
+    [avatarReady, styleReady, voiceComplete]
   );
 
   const handleSpeakToggle = useCallback(async () => {
@@ -250,8 +276,7 @@ function AuthenticatedApp({
         result.profile ?? { ...profile, speak_back_enabled: !previous }
       );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         title: "Unable to update speak-back",
         description: message,
@@ -268,6 +293,42 @@ function AuthenticatedApp({
     toast,
     updateProfile,
   ]);
+
+  useEffect(() => {
+    if (currentPage !== "chat") {
+      setTvScreenRect(null);
+      setAvatarInteractionElement(null);
+      setChatInteractionLocked(false);
+      setAvatarAim({ x: 0, y: 0 });
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (currentPage !== "chat") return;
+    const handlePointer = (event: PointerEvent) => {
+      if (typeof window === "undefined") return;
+      const width = window.innerWidth || 1;
+      const height = window.innerHeight || 1;
+      const normalizedX = Math.min(
+        Math.max((event.clientX / width) * 2 - 1, -1),
+        1
+      );
+      const normalizedY = Math.min(
+        Math.max((event.clientY / height) * 2 - 1, -1),
+        1
+      );
+      setAvatarAim({ x: -normalizedX, y: -normalizedY });
+    };
+    const resetAim = () => setAvatarAim({ x: 0, y: 0 });
+    window.addEventListener("pointermove", handlePointer);
+    window.addEventListener("pointerleave", resetAim);
+    window.addEventListener("blur", resetAim);
+    return () => {
+      window.removeEventListener("pointermove", handlePointer);
+      window.removeEventListener("pointerleave", resetAim);
+      window.removeEventListener("blur", resetAim);
+    };
+  }, [currentPage]);
 
   const handleStyleChange = useCallback((next: CommunicationStyle | null) => {
     setStyleData(next);
@@ -304,7 +365,7 @@ function AuthenticatedApp({
       },
       {
         value: "mindmap" as PageView,
-        label: "Mind Map",
+        label: "Brain",
         disabled: !voiceComplete || !avatarReady || !styleReady,
       },
     ],
@@ -314,7 +375,11 @@ function AuthenticatedApp({
   const setupOptions = useMemo(
     () => [
       { value: "voice" as PageView, label: "Voice", disabled: false },
-      { value: "avatar" as PageView, label: "Avatar", disabled: !voiceComplete },
+      {
+        value: "avatar" as PageView,
+        label: "Avatar",
+        disabled: !voiceComplete,
+      },
       {
         value: "style" as PageView,
         label: "Style",
@@ -328,6 +393,7 @@ function AuthenticatedApp({
     currentPage === "voice" ||
     currentPage === "avatar" ||
     currentPage === "style";
+  const setupComplete = voiceComplete && avatarReady && styleReady;
 
   useEffect(() => {
     if (isSetupPage) {
@@ -363,27 +429,22 @@ function AuthenticatedApp({
             step="Step 1"
             title="Capture your voice"
             description="Record or upload a clean sample so Coqui can synthesize your speech."
-            footer={
-              <div className="flex w-full flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span>Supports WAV, MP3, and WEBM uploads.</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setVoiceSkipped(true);
-                    setSelectedPage("avatar");
-                    toast({
-                      title: "Voice setup skipped",
-                      description: "You can return here anytime.",
-                    });
-                  }}
-                >
-                  Skip for now
-                </Button>
-              </div>
-            }
+            contentClassName="border-none bg-transparent p-0 shadow-none"
           >
-            <VoiceSettingsPanel />
+            <VoiceSettingsPanel
+              onSkip={() => {
+                setVoiceSkipped(true);
+                setSelectedPage("avatar");
+                toast({
+                  title: "Voice setup skipped",
+                  description: "You can return here anytime.",
+                });
+              }}
+              onComplete={() => {
+                setVoiceSkipped(false);
+                handleNav("avatar");
+              }}
+            />
           </SetupScreen>
         );
       case "avatar":
@@ -412,7 +473,7 @@ function AuthenticatedApp({
         );
       case "mindmap":
         return (
-          <div className="flex h-full w-full min-h-0 flex-1 pt-16">
+          <div className="flex h-full w-full min-h-0 flex-1">
             <MindMap3D />
           </div>
         );
@@ -422,13 +483,25 @@ function AuthenticatedApp({
           <div className="relative flex h-full w-full flex-1 overflow-hidden">
             <LivingRoomBackdrop />
             <div
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
+              className="absolute inset-0 z-10 flex items-center justify-center"
               style={{ transform: "translateY(-50px)" }}
             >
-              <RetroTelevision />
+              <RetroTelevision
+                onScreenRectChange={setTvScreenRect}
+                interactionTarget={avatarInteractionElement}
+                aim={avatarAim}
+              />
             </div>
-            <div className="relative z-20 flex flex-1 overflow-hidden">
-              <div className="mx-auto flex w-full flex-1 items-end px-4 pb-12 pt-6 md:px-8">
+            <DynamicGrainLayer />
+            <div className="relative z-20 flex flex-1 overflow-hidden pt-0">
+              <div
+                className={cn(
+                  "mx-auto flex w-full flex-1 items-end px-4 pb-12 pt-6 md:px-8",
+                  chatInteractionLocked
+                    ? "pointer-events-none"
+                    : "pointer-events-auto"
+                )}
+              >
                 <ChatInterface />
               </div>
             </div>
@@ -439,78 +512,125 @@ function AuthenticatedApp({
 
   return (
     <div className="flex h-screen flex-col bg-background relative">
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center px-4 py-4">
-        <div className="pointer-events-auto grid w-full max-w-5xl grid-cols-[1fr_auto_1fr] items-center gap-6">
-          <div className="flex items-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
-              <Image
-                src="/logo.svg"
-                alt="Digital Twin logo"
-                width={28}
-                height={28}
-                className="h-7 w-7"
-                priority
+      {isSetupPage ? (
+        <div className="relative flex flex-1 flex-col bg-gradient-to-br from-[#03170f] via-[#020c08] to-[#010203] text-white">
+          <div className="flex-1 overflow-y-auto px-4 py-10">
+            <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-10 text-center">
+              <SetupProgressHeader
+                currentStep={currentPage}
+                voiceComplete={voiceComplete}
+                avatarComplete={avatarReady}
+                styleComplete={styleReady}
+                onSelect={handleNav}
+                allComplete={setupComplete}
+                onEnterApp={() => handleNav("chat")}
               />
+              <div className="w-full">{renderPage()}</div>
             </div>
           </div>
-          <div className="flex items-center justify-center gap-3 rounded-full border border-white/20 bg-white/10 px-6 py-2 shadow-[0_35px_65px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
-            {mainNavItems.map((item) => {
-              const isActive = currentPage === item.value;
-              return (
-                <Button
-                  key={item.value}
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "flex items-center gap-4 rounded-2xl px-5 py-2 text-base capitalize tracking-wide transition",
-                    isActive ? "bg-white/35 text-white shadow-[0_18px_45px_rgba(0,0,0,0.4)]" : "text-white/70 hover:bg-white/15",
-                  )}
-                  disabled={item.disabled}
-                  onClick={() => handleNav(item.value)}
-                >
-                  {item.label.toLowerCase()}
-                </Button>
-              );
-            })}
-          </div>
-          <div className="flex items-center justify-end">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
-              <Select value={menuValue} onValueChange={handleSetupSelection}>
-                <SelectTrigger
-                  size="sm"
-                  className="flex h-12 w-12 items-center justify-center rounded-full border-none bg-transparent p-0 text-white [&>svg:last-child]:hidden"
-                >
-                  <span className="sr-only">Open setup menu</span>
-                  <CircleEllipsis className="h-7 w-7 text-white" strokeWidth={0} fill="currentColor" />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl border border-white/20 bg-white/10 text-white shadow-[0_25px_65px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
-                  <SelectItem value="menu" className="hidden">
-                    Menu
-                  </SelectItem>
-                  {setupOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
-                      {option.label}
+          <button
+            type="button"
+            onClick={() => setDebugOpen(true)}
+            className="pointer-events-auto fixed bottom-4 right-4 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-white/10 text-white/80 opacity-80 shadow-[0_8px_20px_rgba(0,0,0,0.35)] transition hover:opacity-100 hover:text-white"
+            aria-label="Open debug panel"
+          >
+            <Bug className="h-4 w-4" weight="fill" />
+          </button>
+        </div>
+      ) : (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-4 py-0">
+          <div className="pointer-events-auto flex w-full items-center gap-4 py-3">
+            <div className="flex items-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
+                <Image
+                  src="/logo.svg"
+                  alt="Digital Twin logo"
+                  width={28}
+                  height={28}
+                  className="h-7 w-7"
+                  priority
+                />
+              </div>
+            </div>
+            <div className="flex flex-1 justify-center">
+              <div className="inline-flex items-center justify-center gap-3 rounded-full border border-white/20 bg-white/10 px-6 py-2 shadow-[0_35px_65px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
+                {mainNavItems.map((item) => {
+                  const isActive = currentPage === item.value;
+                  return (
+                    <Button
+                      key={item.value}
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "flex w-40 items-center justify-center gap-4 rounded-2xl px-5 py-2 text-base capitalize tracking-wide transition",
+                        isActive
+                          ? "bg-white/35 text-white shadow-[0_18px_45px_rgba(0,0,0,0.4)]"
+                          : "text-white/70 hover:bg-white/15"
+                      )}
+                      disabled={item.disabled}
+                      onClick={() => handleNav(item.value)}
+                    >
+                      {item.label.toLowerCase()}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex items-center justify-end">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
+                <Select value={menuValue} onValueChange={handleSetupSelection}>
+                  <SelectTrigger
+                    size="sm"
+                    className="flex h-12 w-12 items-center justify-center rounded-full border-none bg-transparent p-0 text-white [&>svg:last-child]:hidden"
+                  >
+                    <span className="sr-only">Open setup menu</span>
+                    <DotsThreeCircle className="h-7 w-7 text-white" weight="fill" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-2xl border border-white/20 bg-white/10 text-white shadow-[0_25px_65px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
+                    <SelectItem value="menu" className="hidden">
+                      Menu
                     </SelectItem>
-                  ))}
-                  <SelectSeparator />
-                  
-                  <SelectItem value="toggle-debug">
-                    {debugOpen ? "Close debug panel" : "Open debug panel"}
-                  </SelectItem>
-                  <SelectSeparator />
-                  <SelectItem value="signout">
-                    <div className="flex items-center gap-2 text-white">
-                      <LogOut className="h-4 w-4 text-white" />
-                      Sign out
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                    {setupOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        disabled={option.disabled}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                    <SelectSeparator />
+                    <SelectItem value="toggle-debug">
+                      {debugOpen ? "Close debug" : "Open debug"}
+                    </SelectItem>
+                    <SelectSeparator />
+                    <SelectItem value="signout">
+                      <div className="flex items-center gap-2 text-white">
+                        <SignOut className="h-4 w-4 text-white" />
+                        Sign out
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <div className="flex flex-1 min-h-0 overflow-hidden">{renderPage()}</div>
+      )}
+      {!isSetupPage && (
+        <div className="flex flex-1 min-h-0 overflow-hidden pt-16">
+          {renderPage()}
+        </div>
+      )}
+
+      {currentPage === "chat" && tvScreenRect ? (
+        <AvatarInteractionOverlay
+          rect={tvScreenRect}
+          onPointerEngaged={setChatInteractionLocked}
+          onElementReady={setAvatarInteractionElement}
+          onAimChange={setAvatarAim}
+        />
+      ) : null}
 
       {debugOpen ? (
         <div className="fixed bottom-4 right-4 z-50 w-[400px] max-w-[95vw]">
@@ -538,6 +658,8 @@ function AuthenticatedApp({
           </Card>
         </div>
       ) : null}
+
+      <GreenCursorGlow />
     </div>
   );
 }
@@ -560,24 +682,20 @@ function SetupScreen({
   contentClassName,
 }: SetupScreenProps) {
   return (
-    <div className="flex h-full w-full flex-1 overflow-auto">
-      <div className="mx-auto w-full max-w-4xl px-4 py-6">
-        <Card>
-          <CardHeader>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {step}
-            </p>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </CardHeader>
-          <CardContent className={cn("space-y-6 pb-6", contentClassName)}>
-            {children}
-          </CardContent>
-          {footer ? (
-            <CardFooter className="flex flex-wrap gap-2">{footer}</CardFooter>
-          ) : null}
-        </Card>
+    <div className="flex w-full flex-col items-center gap-6 text-white">
+      <div
+        className={cn(
+          "mt-6 w-full rounded-[32px] border border-emerald-900/40 bg-black/30 p-10 text-left text-white shadow-[0_45px_85px_rgba(0,0,0,0.55)]",
+          contentClassName
+        )}
+      >
+        {children}
       </div>
+      {footer ? (
+        <div className="mt-6 flex flex-wrap justify-center gap-3 text-white">
+          {footer}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -587,6 +705,8 @@ interface AvatarDisplayProps {
   className?: string;
   frameless?: boolean;
   style?: CSSProperties;
+  interactionTarget?: HTMLElement | null;
+  aim?: { x: number; y: number } | null;
 }
 
 function AvatarDisplay({
@@ -594,6 +714,8 @@ function AvatarDisplay({
   className,
   frameless = false,
   style,
+  interactionTarget,
+  aim = null,
 }: AvatarDisplayProps) {
   const { avatarState, setPosition } = useAvatar();
   const { voiceStyle } = useVoiceClone();
@@ -614,12 +736,251 @@ function AvatarDisplay({
       className={className}
       frameless={frameless}
       style={style}
+      interactionTarget={interactionTarget}
+      aim={aim}
     />
   );
 }
 
-function RetroTelevision() {
+interface SetupProgressHeaderProps {
+  currentStep: PageView;
+  voiceComplete: boolean;
+  avatarComplete: boolean;
+  styleComplete: boolean;
+  onSelect: (step: PageView) => void;
+  allComplete: boolean;
+  onEnterApp: () => void;
+}
+
+function SetupProgressHeader({
+  currentStep,
+  voiceComplete,
+  avatarComplete,
+  styleComplete,
+  onSelect,
+  allComplete,
+  onEnterApp,
+}: SetupProgressHeaderProps) {
+  const labels: Record<
+    PageView,
+    {
+      step: string;
+      title: string;
+    }
+  > = {
+    voice: { step: "Step 1", title: "Capture My Voice" },
+    avatar: { step: "Step 2", title: "Build My Avatar" },
+    style: { step: "Step 3", title: "Tune My Style" },
+    chat: { step: "", title: "" },
+    mindmap: { step: "", title: "" },
+  };
+
+  const steps: Array<{
+    key: PageView;
+    icon: React.ComponentType<{ className?: string }>;
+  }> = [
+    { key: "voice", icon: Waveform },
+    { key: "avatar", icon: Sphere },
+    { key: "style", icon: PenNibStraight },
+  ];
+
+  const statusFor = (key: PageView) => {
+    if (currentStep === key) return "current";
+    if (key === "voice" && voiceComplete) return "complete";
+    if (key === "avatar" && avatarComplete) return "complete";
+    if (key === "style" && styleComplete) return "complete";
+    return "upcoming";
+  };
+
+  return (
+    <div className="w-full text-white">
+      <div className="mx-auto flex max-w-4xl flex-col items-center gap-5 text-center">
+        <Image
+          src="/logo.svg"
+          alt="Digital Twin logo"
+          width={48}
+          height={48}
+          className="h-12 w-12"
+          priority
+        />
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.4em] text-emerald-200">
+            {labels[currentStep].step}
+          </p>
+          <h2 className="text-3xl font-semibold text-white">
+            {labels[currentStep].title}
+          </h2>
+        </div>
+
+        <div className="flex w-full max-w-xl items-center gap-4 text-emerald-100">
+          {steps.map((step, index) => {
+            const Icon = step.icon;
+            const status = statusFor(step.key);
+            return (
+              <Fragment key={step.key}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(step.key)}
+                  className={cn(
+                    "relative flex h-14 w-14 items-center justify-center rounded-full border transition",
+                    status === "current" &&
+                      "border-transparent bg-white text-black shadow-[0_8px_25px_rgba(0,0,0,0.35)]",
+                    status === "complete" &&
+                      "border-transparent bg-emerald-400 text-emerald-950 shadow-[0_6px_20px_rgba(0,255,150,0.35)]",
+                    status === "upcoming" && "border-white/30 text-white/40"
+                  )}
+                >
+                  <Icon
+                    className="h-6 w-6"
+                    weight="regular"
+                  />
+                </button>
+                {index < steps.length - 1 && (
+                  <div className="flex-1 h-px bg-white/20" />
+                )}
+              </Fragment>
+            );
+          })}
+        </div>
+        {currentStep === "style" ? (
+          allComplete ? (
+            <button
+              type="button"
+              onClick={onEnterApp}
+              className="inline-flex items-center justify-center rounded-full border border-white/40 bg-white/10 px-6 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-white/90 shadow-[0_25px_55px_rgba(0,0,0,0.5)] transition hover:bg-white/20 hover:text-white"
+            >
+              Access digital twin
+            </button>
+          ) : (
+            <p className="text-xs text-white/50">
+            Finish the remaining steps to unlock the Digital Twin experience.
+            </p>
+          )
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+interface AvatarInteractionOverlayProps {
+  rect: DOMRect;
+  onPointerEngaged?: (active: boolean) => void;
+  onElementReady?: (element: HTMLElement | null) => void;
+}
+
+function AvatarInteractionOverlay({
+  rect,
+  onPointerEngaged,
+  onElementReady,
+}: AvatarInteractionOverlayProps) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const element = overlayRef.current;
+    onElementReady?.(element);
+    return () => {
+      onElementReady?.(null);
+      onPointerEngaged?.(false);
+    };
+  }, [onElementReady, onPointerEngaged]);
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[70]" aria-hidden="true">
+      <div
+        ref={overlayRef}
+        className="pointer-events-auto absolute cursor-grab active:cursor-grabbing"
+        style={{
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        }}
+        onPointerDown={() => {
+          onPointerEngaged?.(true);
+        }}
+        onPointerUp={() => {
+          onPointerEngaged?.(false);
+        }}
+        onPointerCancel={() => {
+          onPointerEngaged?.(false);
+        }}
+        onPointerLeave={() => {
+          onPointerEngaged?.(false);
+        }}
+      />
+    </div>
+  );
+}
+
+function DynamicGrainLayer() {
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) {
+      return;
+    }
+
+    overlay.style.setProperty("--cursor-x", "50%");
+    overlay.style.setProperty("--cursor-y", "50%");
+
+    const interval = window.setInterval(() => {
+      overlay.style.backgroundPosition = `${Math.random() * 100}% ${
+        Math.random() * 100
+      }%`;
+    }, 120);
+
+    const handlePointer = (event: PointerEvent) => {
+      if (!overlayRef.current || typeof window === "undefined") return;
+      const x = (event.clientX / window.innerWidth) * 100;
+      const y = (event.clientY / window.innerHeight) * 100;
+      overlayRef.current.style.setProperty("--cursor-x", `${x}%`);
+      overlayRef.current.style.setProperty("--cursor-y", `${y}%`);
+    };
+
+    window.addEventListener("pointermove", handlePointer);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("pointermove", handlePointer);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={overlayRef}
+      className="pointer-events-none absolute inset-0 z-[15] opacity-35"
+      style={{
+        backgroundImage: `url("${NOISE_DATA_URI}")`,
+        backgroundSize: "220px",
+        mixBlendMode: "screen",
+      }}
+    >
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(circle at var(--cursor-x, 50%) var(--cursor-y, 50%), rgba(0,255,140,0.2), transparent 45%)",
+          mixBlendMode: "soft-light",
+        }}
+      />
+    </div>
+  );
+}
+
+interface RetroTelevisionProps {
+  onScreenRectChange?: (rect: DOMRect | null) => void;
+  interactionTarget?: HTMLElement | null;
+  aim?: { x: number; y: number };
+}
+
+function RetroTelevision({
+  onScreenRectChange,
+  interactionTarget,
+  aim,
+}: RetroTelevisionProps) {
   const { avatarState } = useAvatar();
+  const screenRef = useRef<HTMLDivElement>(null);
   const screenStyle = useMemo(() => {
     return {
       left: `${(TV_SCREEN.offsetX / TV_FRAME_WIDTH) * 100}%`,
@@ -629,8 +990,25 @@ function RetroTelevision() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    if (!onScreenRectChange || typeof window === "undefined") return;
+    const updateRect = () => {
+      if (!screenRef.current) return;
+      onScreenRectChange(screenRef.current.getBoundingClientRect());
+    };
+    updateRect();
+    window.addEventListener("resize", updateRect);
+    return () => {
+      window.removeEventListener("resize", updateRect);
+      onScreenRectChange(null);
+    };
+  }, [onScreenRectChange]);
+
   return (
-    <div className="relative w-full max-w-[440px]" style={{ width: "min(440px, 70vw)" }}>
+    <div
+      className="relative w-full"
+      style={{ width: "min(55vw, 55vh, 520px)" }}
+    >
       <div className="relative w-full">
         <Image
           src="/tv-frame.png"
@@ -638,14 +1016,19 @@ function RetroTelevision() {
           width={TV_FRAME_WIDTH}
           height={TV_FRAME_HEIGHT}
           priority
-          className="h-auto w-full select-none pointer-events-none"
+          className="h-auto w-full select-none pointer-events-none brightness-[0.85] contrast-[1.05]"
         />
-        <div className="absolute" style={screenStyle}>
+        <div
+          ref={screenRef}
+          className="absolute pointer-events-none"
+          style={screenStyle}
+        >
           <div
-            className="relative h-full w-full overflow-hidden border border-black/60 bg-black"
+            className="pointer-events-auto relative h-full w-full overflow-hidden border border-black/60 bg-black"
             style={{
               boxShadow:
                 "inset 0 50px 120px rgba(0,0,0,0.95), inset 0 -45px 90px rgba(0,0,0,0.9), inset 35px 0 80px rgba(0,0,0,0.85), inset -35px 0 80px rgba(0,0,0,0.85)",
+              filter: "brightness(0.9) contrast(1.1)",
             }}
           >
             <div
@@ -660,8 +1043,10 @@ function RetroTelevision() {
               <AvatarDisplay
                 draggable={false}
                 frameless
-                className="!h-full !w-full"
+                className="!h-full !w-full cursor-grab active:cursor-grabbing"
                 style={{ width: "100%", height: "100%", borderRadius: 0 }}
+                interactionTarget={interactionTarget}
+                aim={aim}
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-sm text-white/60">
@@ -672,6 +1057,61 @@ function RetroTelevision() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function GreenCursorGlow() {
+  const glowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const glow = glowRef.current;
+    if (!glow) {
+      return;
+    }
+
+    let frame: number;
+    let targetX = window.innerWidth / 2;
+    let targetY = window.innerHeight / 2;
+    let currentX = targetX;
+    let currentY = targetY;
+
+    const handlePointer = (event: PointerEvent) => {
+      targetX = event.clientX;
+      targetY = event.clientY;
+    };
+
+    const animate = () => {
+      currentX += (targetX - currentX) * 0.2;
+      currentY += (targetY - currentY) * 0.2;
+      glow.style.transform = `translate3d(${currentX - 120}px, ${
+        currentY - 120
+      }px, 0)`;
+      frame = window.requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    window.addEventListener("pointermove", handlePointer);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", handlePointer);
+    };
+  }, []);
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[9999] mix-blend-screen">
+      <div
+        ref={glowRef}
+        className="absolute h-60 w-60 rounded-full opacity-40 blur-3xl transition-transform duration-150"
+        style={{
+          background:
+            "radial-gradient(circle, rgba(0,255,157,0.6) 0%, rgba(0,255,157,0.1) 40%, transparent 70%)",
+          boxShadow: "0 0 120px rgba(0,255,157,0.4)",
+          transform: "translate3d(-999px, -999px, 0)",
+        }}
+      />
     </div>
   );
 }
@@ -687,7 +1127,7 @@ function LivingRoomBackdrop() {
         sizes="100vw"
         className="object-cover"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
     </div>
   );
 }

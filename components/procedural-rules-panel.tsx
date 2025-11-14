@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Trash2 } from "lucide-react"
+import { Trash } from '@phosphor-icons/react'
 import { useToast } from "@/hooks/use-toast"
 import { deleteProceduralRule, type ProceduralRule } from "@/app/actions/procedural-rules"
 
@@ -84,7 +84,7 @@ export function ProceduralRulesPanel({
 
           <div className="flex justify-end pt-1">
             <Button variant="ghost" size="sm" onClick={() => handleDelete(rule.id)} disabled={loading}>
-              <Trash2 className="h-4 w-4" />
+              <Trash className="h-4 w-4" />
             </Button>
           </div>
         </div>
