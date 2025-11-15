@@ -217,10 +217,12 @@ function AuthenticatedApp({
   );
   const [styleReady, setStyleReady] = useState(Boolean(initialStyle));
   const [voiceSkipped, setVoiceSkipped] = useState(false);
+  const [avatarSkipped, setAvatarSkipped] = useState(false);
   const voiceComplete = voiceReady || voiceSkipped;
+  const avatarComplete = avatarReady || avatarSkipped;
   const [selectedPage, setSelectedPage] = useState<PageView>(() => {
     if (!voiceComplete) return "voice";
-    if (!avatarReady) return "avatar";
+    if (!avatarComplete) return "avatar";
     if (!styleReady) return "style";
     return "chat";
   });
@@ -242,16 +244,16 @@ function AuthenticatedApp({
       const canNavigate =
         page === "voice" ||
         (page === "avatar" && voiceComplete) ||
-        (page === "style" && voiceComplete && avatarReady) ||
+        (page === "style" && voiceComplete && avatarComplete) ||
         ((page === "chat" || page === "mindmap") &&
           voiceComplete &&
-          avatarReady &&
+          avatarComplete &&
           styleReady);
 
       if (!canNavigate) return;
       setSelectedPage(page);
     },
-    [avatarReady, styleReady, voiceComplete]
+    [avatarComplete, styleReady, voiceComplete]
   );
 
   const handleSpeakToggle = useCallback(async () => {
@@ -345,6 +347,7 @@ function AuthenticatedApp({
       setSpeakBackEnabledLocal(false);
       resetAvatar();
       setVoiceSkipped(false);
+      setAvatarSkipped(false);
       toast({ title: "Voice, avatar, and style cleared" });
     } catch (error) {
       const message =
@@ -361,15 +364,15 @@ function AuthenticatedApp({
       {
         value: "chat" as PageView,
         label: "Chat",
-        disabled: !voiceComplete || !avatarReady || !styleReady,
+        disabled: !voiceComplete || !avatarComplete || !styleReady,
       },
       {
         value: "mindmap" as PageView,
         label: "Brain",
-        disabled: !voiceComplete || !avatarReady || !styleReady,
+        disabled: !voiceComplete || !avatarComplete || !styleReady,
       },
     ],
-    [avatarReady, styleReady, voiceComplete]
+    [avatarComplete, styleReady, voiceComplete]
   );
 
   const setupOptions = useMemo(
@@ -383,17 +386,17 @@ function AuthenticatedApp({
       {
         value: "style" as PageView,
         label: "Style",
-        disabled: !voiceComplete || !avatarReady,
+        disabled: !voiceComplete || !avatarComplete,
       },
     ],
-    [avatarReady, voiceComplete]
+    [avatarComplete, voiceComplete]
   );
 
   const isSetupPage =
     currentPage === "voice" ||
     currentPage === "avatar" ||
     currentPage === "style";
-  const setupComplete = voiceComplete && avatarReady && styleReady;
+  const setupComplete = voiceComplete && avatarComplete && styleReady;
 
   useEffect(() => {
     if (isSetupPage) {
@@ -413,6 +416,11 @@ function AuthenticatedApp({
       if (value === "toggle-debug") {
         setMenuValue("menu");
         setDebugOpen((prev) => !prev);
+        return;
+      }
+      if (value === "setup") {
+        setMenuValue("voice");
+        handleNav("voice");
         return;
       }
       setMenuValue(value);
@@ -454,7 +462,16 @@ function AuthenticatedApp({
             title="Build your avatar"
             description="Upload a portrait, generate the 3D mesh, and link it to your preferred voice."
           >
-            <FaceAvatarPanel />
+            <FaceAvatarPanel
+              onSkip={() => {
+                setAvatarSkipped(true);
+                setSelectedPage("style");
+              }}
+              onComplete={() => {
+                setAvatarSkipped(false);
+                handleNav("style");
+              }}
+            />
           </SetupScreen>
         );
       case "style":
@@ -513,13 +530,13 @@ function AuthenticatedApp({
   return (
     <div className="flex h-screen flex-col bg-background relative">
       {isSetupPage ? (
-        <div className="relative flex flex-1 flex-col bg-gradient-to-br from-[#03170f] via-[#020c08] to-[#010203] text-white">
-          <div className="flex-1 overflow-y-auto px-4 py-10">
-            <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-10 text-center">
+        <div className="relative flex min-h-screen flex-1 flex-col bg-gradient-to-br from-[#03170f] via-[#020c08] to-[#010203] text-white">
+          <div className="flex flex-1 overflow-y-auto px-4 py-10">
+            <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-between gap-10 text-center">
               <SetupProgressHeader
                 currentStep={currentPage}
                 voiceComplete={voiceComplete}
-                avatarComplete={avatarReady}
+                avatarComplete={avatarComplete}
                 styleComplete={styleReady}
                 onSelect={handleNav}
                 allComplete={setupComplete}
@@ -538,31 +555,30 @@ function AuthenticatedApp({
           </button>
         </div>
       ) : (
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-4 py-0">
-          <div className="pointer-events-auto flex w-full items-center gap-4 py-3">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-3 py-0">
+          <div className="pointer-events-auto flex w-full items-center gap-3 py-2.5">
             <div className="flex items-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_18px_35px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
                 <Image
                   src="/logo.svg"
                   alt="Digital Twin logo"
-                  width={28}
-                  height={28}
-                  className="h-7 w-7"
+                  width={22}
+                  height={22}
+                  className="h-6 w-6"
                   priority
                 />
               </div>
             </div>
             <div className="flex flex-1 justify-center">
-              <div className="inline-flex items-center justify-center gap-3 rounded-full border border-white/20 bg-white/10 px-6 py-2 shadow-[0_35px_65px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
+              <div className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
                 {mainNavItems.map((item) => {
                   const isActive = currentPage === item.value;
                   return (
                     <Button
                       key={item.value}
                       variant="ghost"
-                      size="sm"
                       className={cn(
-                        "flex w-40 items-center justify-center gap-4 rounded-2xl px-5 py-2 text-base capitalize tracking-wide transition",
+                        "flex w-32 items-center justify-center gap-3 rounded-2xl px-4 py-1.5 text-sm capitalize tracking-wide transition",
                         isActive
                           ? "bg-white/35 text-white shadow-[0_18px_45px_rgba(0,0,0,0.4)]"
                           : "text-white/70 hover:bg-white/15"
@@ -577,37 +593,29 @@ function AuthenticatedApp({
               </div>
             </div>
             <div className="flex items-center justify-end">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_18px_35px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
                 <Select value={menuValue} onValueChange={handleSetupSelection}>
                   <SelectTrigger
                     size="sm"
-                    className="flex h-12 w-12 items-center justify-center rounded-full border-none bg-transparent p-0 text-white [&>svg:last-child]:hidden"
+                    className="flex h-10 w-10 items-center justify-center rounded-full border-none bg-transparent p-0 text-white [&>svg:last-child]:hidden"
                   >
                     <span className="sr-only">Open setup menu</span>
-                    <DotsThreeCircle className="h-7 w-7 text-white" weight="fill" />
+                    <DotsThreeCircle className="h-6 w-6 text-white" weight="fill" />
                   </SelectTrigger>
                   <SelectContent className="rounded-2xl border border-white/20 bg-white/10 text-white shadow-[0_25px_65px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
                     <SelectItem value="menu" className="hidden">
                       Menu
                     </SelectItem>
-                    {setupOptions.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        value={option.value}
-                        disabled={option.disabled}
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                    <SelectSeparator />
-                    <SelectItem value="toggle-debug">
-                      {debugOpen ? "Close debug" : "Open debug"}
+                    <SelectItem value="setup" disabled={isSetupPage}>
+                      Setup
                     </SelectItem>
-                    <SelectSeparator />
+                    <SelectItem value="toggle-debug">
+                      Console
+                    </SelectItem>
                     <SelectItem value="signout">
                       <div className="flex items-center gap-2 text-white">
                         <SignOut className="h-4 w-4 text-white" />
-                        Sign out
+                        Logout
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -618,7 +626,7 @@ function AuthenticatedApp({
         </div>
       )}
       {!isSetupPage && (
-        <div className="flex flex-1 min-h-0 overflow-hidden pt-16">
+        <div className="flex flex-1 min-h-0 overflow-hidden pt-10">
           {renderPage()}
         </div>
       )}
@@ -682,17 +690,12 @@ function SetupScreen({
   contentClassName,
 }: SetupScreenProps) {
   return (
-    <div className="flex w-full flex-col items-center gap-6 text-white">
-      <div
-        className={cn(
-          "mt-6 w-full rounded-[32px] border border-emerald-900/40 bg-black/30 p-10 text-left text-white shadow-[0_45px_85px_rgba(0,0,0,0.55)]",
-          contentClassName
-        )}
-      >
+    <div className="flex h-full w-full flex-1 flex-col items-center gap-4 text-white">
+      <div className={cn("mt-4 flex h-full w-full flex-1 overflow-auto p-8 text-left text-white", contentClassName)}>
         {children}
       </div>
       {footer ? (
-        <div className="mt-6 flex flex-wrap justify-center gap-3 text-white">
+        <div className="mt-4 flex flex-wrap justify-center gap-3 text-white">
           {footer}
         </div>
       ) : null}
@@ -794,25 +797,25 @@ function SetupProgressHeader({
 
   return (
     <div className="w-full text-white">
-      <div className="mx-auto flex max-w-4xl flex-col items-center gap-5 text-center">
+      <div className="mx-auto flex max-w-4xl flex-col items-center gap-3 text-center">
         <Image
           src="/logo.svg"
           alt="Digital Twin logo"
-          width={48}
-          height={48}
-          className="h-12 w-12"
+          width={28}
+          height={28}
+          className="h-7 w-7"
           priority
         />
-        <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.4em] text-emerald-200">
+        <div className="space-y-0.5 text-white/90">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-emerald-200">
             {labels[currentStep].step}
           </p>
-          <h2 className="text-3xl font-semibold text-white">
+          <h2 className="text-xl font-semibold text-white">
             {labels[currentStep].title}
           </h2>
         </div>
 
-        <div className="flex w-full max-w-xl items-center gap-4 text-emerald-100">
+        <div className="flex w-full max-w-lg items-center justify-center gap-4 text-emerald-100">
           {steps.map((step, index) => {
             const Icon = step.icon;
             const status = statusFor(step.key);
@@ -822,21 +825,18 @@ function SetupProgressHeader({
                   type="button"
                   onClick={() => onSelect(step.key)}
                   className={cn(
-                    "relative flex h-14 w-14 items-center justify-center rounded-full border transition",
+                    "relative flex h-10 w-10 items-center justify-center rounded-full border transition",
                     status === "current" &&
-                      "border-transparent bg-white text-black shadow-[0_8px_25px_rgba(0,0,0,0.35)]",
+                      "border-transparent bg-white text-black shadow-[0_6px_18px_rgba(0,0,0,0.35)]",
                     status === "complete" &&
-                      "border-transparent bg-emerald-400 text-emerald-950 shadow-[0_6px_20px_rgba(0,255,150,0.35)]",
+                      "border-transparent bg-emerald-400 text-emerald-950 shadow-[0_5px_14px_rgba(0,255,150,0.3)]",
                     status === "upcoming" && "border-white/30 text-white/40"
                   )}
                 >
-                  <Icon
-                    className="h-6 w-6"
-                    weight="regular"
-                  />
+                  <Icon className="h-4 w-4" weight="regular" />
                 </button>
                 {index < steps.length - 1 && (
-                  <div className="flex-1 h-px bg-white/20" />
+                  <div className="h-px w-12 bg-white/15" />
                 )}
               </Fragment>
             );

@@ -9,15 +9,15 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react"
-import { SpinnerGap, Microphone, CaretDown, WaveSquare } from "@phosphor-icons/react"
+import { SpinnerGap, Microphone, CaretDown, WaveSquare, Check } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { useVoiceClone } from "@/components/voice-clone-provider"
 import { cn } from "@/lib/utils"
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
 
 const passage =
   "In the luminous hush of the studio, my thoughts flow like calm currents, warm and sincere. Every word carries a gentle curiosity, guiding the listener toward understanding."
+const FALLBACK_HIGHLIGHT_DURATION = 11
 
 interface VoiceSettingsPanelProps {
   onSkip?: () => void
@@ -100,15 +100,16 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
   const [recognitionSupported, setRecognitionSupported] = useState(true)
   const [lastRecordingDuration, setLastRecordingDuration] = useState(0)
   const recordStartRef = useRef<number | null>(null)
-  const fallbackDuration = 15
-  const fallbackSpeedMultiplier = 3
 
   const [micDevices, setMicDevices] = useState<Array<{ id: string; label: string }>>([])
   const [selectedMicId, setSelectedMicId] = useState<string>("")
+  const [micMenuOpen, setMicMenuOpen] = useState(false)
+  const [speechRecognitionActive, setSpeechRecognitionActive] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fallbackHighlightTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const waveCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -118,6 +119,7 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
   const animationRef = useRef<number | null>(null)
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
   const recognitionActiveRef = useRef(false)
+  const micMenuRef = useRef<HTMLDivElement | null>(null)
 
   const words = useMemo(() => passage.split(" "), [])
   const normalizedWords = useMemo(
@@ -205,10 +207,44 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
     }
   }, [drawWaveform])
 
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (!micMenuRef.current) return
+      if (!micMenuRef.current.contains(event.target as Node)) {
+        setMicMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => {
+      document.removeEventListener("mousedown", handleClick)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!micMenuOpen) return
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMicMenuOpen(false)
+      }
+    }
+    document.addEventListener("keydown", handleKeydown)
+    return () => {
+      document.removeEventListener("keydown", handleKeydown)
+    }
+  }, [micMenuOpen])
+
+  const stopFallbackHighlight = useCallback(() => {
+    if (fallbackHighlightTimerRef.current) {
+      clearInterval(fallbackHighlightTimerRef.current)
+      fallbackHighlightTimerRef.current = null
+    }
+  }, [])
+
   const stopSpeechRecognition = useCallback(() => {
     recognitionRef.current?.stop()
     recognitionRef.current = null
     recognitionActiveRef.current = false
+    setSpeechRecognitionActive(false)
   }, [])
 
   const advanceHighlight = useCallback(
@@ -242,11 +278,12 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
     if (!RecognitionCtor) {
       setRecognitionSupported(false)
       recognitionActiveRef.current = false
+      setSpeechRecognitionActive(false)
       return
     }
     setRecognitionSupported(true)
 
-      const recognition = new RecognitionCtor()
+    const recognition = new RecognitionCtor()
     recognition.lang = "en-US"
     recognition.continuous = true
     recognition.interimResults = true
@@ -258,17 +295,21 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
     }
     recognition.onerror = () => {
       recognitionActiveRef.current = false
+      setSpeechRecognitionActive(false)
     }
     recognition.onend = () => {
       recognitionActiveRef.current = false
+      setSpeechRecognitionActive(false)
     }
 
     try {
       recognition.start()
       recognitionRef.current = recognition
       recognitionActiveRef.current = true
+      setSpeechRecognitionActive(true)
     } catch {
       recognitionActiveRef.current = false
+      setSpeechRecognitionActive(false)
     }
   }, [advanceHighlight])
 
@@ -303,10 +344,12 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
       audioCtxRef.current.close().catch(() => {})
       audioCtxRef.current = null
     }
+    stopFallbackHighlight()
     setRecording(false)
     setDuration(0)
     setHighlightIndex(0)
-  }, [stopSpeechRecognition])
+    setMicMenuOpen(false)
+  }, [stopFallbackHighlight, stopSpeechRecognition])
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -397,7 +440,7 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
         if (mediaRecorderRef.current === recorder && recorder.state === "recording") {
           stopRecording()
         }
-      }, 15_000)
+      }, 12_000)
     } catch (error) {
       const message = error instanceof Error ? error.message : "Microphone permission denied"
       toast({ title: "Recording failed", description: message, variant: "destructive" })
@@ -502,144 +545,215 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
   }, [recording])
 
   useEffect(() => {
-    if (!recording) return
-    if (!recognitionActiveRef.current) {
-      const progress = Math.min(1, (duration / fallbackDuration) * fallbackSpeedMultiplier)
-      const target = Math.min(words.length - 1, Math.floor(progress * words.length))
-      setHighlightIndex((current) => {
-        if (target <= current) return current
-        const step = Math.min(target - current, 2)
-        return current + step
-      })
-    }
-    if (duration >= 15) {
+    if (duration >= 12 && recording) {
       stopRecording()
     }
-  }, [duration, fallbackDuration, fallbackSpeedMultiplier, recording, stopRecording, words.length])
+  }, [duration, recording, stopRecording])
 
-  const countdown = Math.max(0, 15 - duration)
-  const readyToSubmit = Boolean(recordedBlob && lastRecordingDuration >= 15)
+  useEffect(() => {
+    if (!recording || speechRecognitionActive) {
+      stopFallbackHighlight()
+      return
+    }
+    const intervalMs = Math.max(
+      80,
+      Math.floor((FALLBACK_HIGHLIGHT_DURATION * 1000) / Math.max(words.length, 1)),
+    )
+    fallbackHighlightTimerRef.current = window.setInterval(() => {
+      setHighlightIndex((current) => {
+        if (current >= words.length - 1) {
+          stopFallbackHighlight()
+          return words.length - 1
+        }
+        const nextIndex = current + 1
+        if (nextIndex >= words.length - 1) {
+          stopFallbackHighlight()
+          return words.length - 1
+        }
+        return nextIndex
+      })
+    }, intervalMs)
+
+    return () => {
+      stopFallbackHighlight()
+    }
+  }, [recording, speechRecognitionActive, stopFallbackHighlight, words.length])
+
+  const handleSelectMic = useCallback(
+    (deviceId: string) => {
+      if (!deviceId || deviceId === selectedMicId) {
+        setMicMenuOpen(false)
+        return
+      }
+      setSelectedMicId(deviceId)
+      setMicMenuOpen(false)
+    },
+    [selectedMicId],
+  )
+
+  const countdown = Math.max(0, 12 - duration)
+  const readyToSubmit = Boolean(recordedBlob)
+  const micOptions: Array<{ id: string; label: string; disabled?: boolean }> = micDevices.length
+    ? micDevices
+    : [{ id: "default", label: "No microphones found", disabled: true }]
 
   return (
-    <div
-      className="flex w-full items-center justify-center px-4 py-6 text-center text-white"
-      style={{ minHeight: "calc(100vh - 240px)" }}
-    >
-      <div className="flex w-full max-w-4xl flex-col items-center gap-8">
-        <p className="text-base text-white/80">Hit record and read the text below</p>
+    <div className="flex h-full w-full flex-1 flex-col px-4 py-6 text-center text-white">
+      <div className="mb-12 flex items-center justify-center">
+        <p className="text-sm text-white/75">Hit record and read the text below</p>
+      </div>
 
-        <div className="relative">
-          <button
-            type="button"
-            onClick={recording ? stopRecording : startRecording}
-            className={cn(
-              "flex h-24 w-24 items-center justify-center rounded-full text-white shadow-[0_18px_40px_rgba(255,0,72,0.45)] transition focus:outline-none focus-visible:ring-4 focus-visible:ring-red-400/30",
-              recording
-                ? "bg-gradient-to-b from-red-500 via-red-600 to-red-700 animate-pulse"
-                : "bg-gradient-to-b from-red-400 via-red-500 to-red-600 hover:scale-105",
-            )}
-          >
-            {recording ? (
-              <span className="text-4xl font-semibold tracking-tight tabular-nums">
-                {countdown.toString().padStart(2, "0")}
-              </span>
-            ) : (
-              <Microphone className="h-10 w-10" weight="fill" />
-            )}
-          </button>
-          <Select value={selectedMicId} onValueChange={setSelectedMicId} disabled={!micDevices.length}>
-            <SelectTrigger className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full border border-white/40 bg-black/90 text-white shadow-[0_8px_20px_rgba(0,0,0,0.45)] focus:outline-none [&>svg:last-child]:hidden">
-              <span className="sr-only">Select microphone</span>
-              <CaretDown className="h-4 w-4" weight="bold" />
-            </SelectTrigger>
-            <SelectContent className="border border-white/10 bg-black/70 text-white">
-              {micDevices.length ? (
-                micDevices.map((device) => (
-                  <SelectItem key={device.id} value={device.id}>
-                    {device.label || "Default microphone"}
-                  </SelectItem>
-                ))
-              ) : (
-                <SelectItem value="default">No microphones found</SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {!recognitionSupported && (
-          <p className="text-xs uppercase tracking-[0.35em] text-amber-200/80">
-            Live highlighting unavailable in this browser. Using timed fallback.
-          </p>
-        )}
-
-        <div className="max-w-4xl text-lg leading-relaxed text-white/80">
-          <div
-            className="flex flex-wrap justify-center gap-x-3 gap-y-2 text-center"
-            style={{ minHeight: "4rem" }}
-          >
-            {words.map((word, index) => (
-              <span
-                key={`${word}-${index}`}
+      <div className="flex flex-1 items-center justify-center">
+        <div className="flex w-full max-w-4xl flex-col items-center justify-center gap-10 text-center">
+          <div className="flex flex-col items-center gap-5">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={recording ? stopRecording : startRecording}
                 className={cn(
-                  "whitespace-nowrap px-1 transition-colors duration-200",
-                  index === highlightIndex ? "text-white" : "text-white/35",
+                  "flex h-16 w-16 items-center justify-center rounded-full text-white shadow-[0_18px_40px_rgba(255,0,72,0.45)] transition focus:outline-none focus-visible:ring-4 focus-visible:ring-red-400/30",
+                  recording
+                    ? "bg-gradient-to-b from-red-500 via-red-600 to-red-700 animate-pulse"
+                    : "bg-gradient-to-b from-red-400 via-red-500 to-red-600 hover:scale-105",
                 )}
               >
-                {word}
-              </span>
-            ))}
-          </div>
-        </div>
+                {recording ? (
+                  <span className="text-2xl font-semibold tracking-tight tabular-nums">
+                    {countdown.toString().padStart(2, "0")}
+                  </span>
+                ) : (
+                  <Microphone className="h-7 w-7" weight="fill" />
+                )}
+              </button>
+              <div ref={micMenuRef} className="absolute -bottom-2 -right-2">
+                <div className="relative flex flex-col items-end">
+                  <button
+                    type="button"
+                    onClick={() => setMicMenuOpen((prev) => !prev)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-black/90 text-white shadow-[0_8px_20px_rgba(0,0,0,0.45)] transition hover:border-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                    aria-haspopup="menu"
+                    aria-expanded={micMenuOpen}
+                  >
+                    <span className="sr-only">Select microphone</span>
+                    <CaretDown className="h-3 w-3" weight="bold" />
+                  </button>
+                  {micMenuOpen ? (
+                    <div className="absolute top-full z-20 mt-3 w-52 rounded-2xl border border-white/15 bg-black/90 py-2 text-left text-white shadow-[0_30px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+                      <p className="px-4 pb-2 text-[11px] uppercase tracking-[0.35em] text-white/40">
+                        Microphone
+                      </p>
+                      <div className="max-h-56 overflow-auto">
+                        {micOptions.map((device) => {
+                          const disabled = Boolean(device.disabled)
+                          const isSelected = selectedMicId === device.id
+                          return (
+                            <button
+                              key={device.id}
+                              type="button"
+                              disabled={disabled}
+                              onClick={() => !disabled && handleSelectMic(device.id)}
+                              className={cn(
+                                "flex w-full items-center justify-between px-4 py-2 text-sm transition",
+                                disabled
+                                  ? "cursor-not-allowed text-white/30"
+                                  : isSelected
+                                    ? "text-white"
+                                    : "text-white/70 hover:bg-white/5 hover:text-white",
+                              )}
+                            >
+                              <span className="truncate">{device.label || "Default microphone"}</span>
+                              {isSelected ? <Check className="h-4 w-4 text-emerald-300" weight="bold" /> : null}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
 
-        <div className="relative w-full max-w-5xl">
-          <canvas ref={waveCanvasRef} className="h-40 w-full sm:h-48 md:h-56" />
-        </div>
-
-        <div className="flex flex-col items-center gap-4 text-white/80">
-          <div
-            onDragOver={(event) => {
-              event.preventDefault()
-              event.dataTransfer.dropEffect = "copy"
-            }}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className="flex w-full max-w-lg cursor-pointer items-center justify-center gap-2 text-xs text-white/60"
-          >
-            <WaveSquare className="h-3 w-3" />
-            <span>or drag and drop a WAV file here</span>
-          </div>
-          <Button
-            onClick={() => readyToSubmit && recordedBlob && handleUpload(recordedBlob)}
-            disabled={!readyToSubmit || uploading}
-            className={cn(
-              "h-14 w-56 rounded-full border border-white/25 text-lg font-semibold tracking-wide transition-all",
-              readyToSubmit
-                ? "bg-white text-black shadow-[0_18px_45px_rgba(255,255,255,0.4)] scale-105"
-                : "bg-white/15 text-white/80 backdrop-blur-2xl hover:bg-white/25",
+            {!recognitionSupported && (
+              <p className="text-xs uppercase tracking-[0.35em] text-amber-200/80">
+                Live highlighting unavailable in this browser. Using timed fallback.
+              </p>
             )}
-          >
-            {uploading ? <SpinnerGap className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Next
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="audio/*"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-sm text-white/60 underline-offset-4 hover:text-white"
-            onClick={() => {
-              onSkip?.()
-              toast({ title: "Voice skipped", description: "You can come back anytime." })
-            }}
-          >
-            Skip for now
-          </Button>
+          </div>
+
+          <div className="w-full max-w-3xl text-base leading-relaxed text-white/80">
+            <div
+              className="flex flex-wrap justify-center gap-x-2 gap-y-1 text-center"
+              style={{ minHeight: "3rem", maxHeight: "3.2rem", overflow: "hidden" }}
+            >
+              {words.map((word, index) => (
+                <span
+                  key={`${word}-${index}`}
+                  className={cn(
+                    "whitespace-nowrap px-1 transition-colors duration-200",
+                    index === highlightIndex ? "text-white" : "text-white/35",
+                  )}
+                >
+                  {word}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="relative w-full max-w-3xl">
+            <canvas ref={waveCanvasRef} className="h-20 w-full sm:h-24 md:h-28" />
+          </div>
         </div>
+      </div>
+
+      <div className="mt-12 flex flex-col items-center gap-3 text-white/80">
+        {recordedBlob && lastRecordingDuration > 0 && lastRecordingDuration < 12 ? (
+          <p className="text-xs text-white/60">
+            Short takes reduce accuracy. Aim for ~12 seconds, but you can still continue.
+          </p>
+        ) : null}
+        <div
+          onDragOver={(event) => {
+            event.preventDefault()
+            event.dataTransfer.dropEffect = "copy"
+          }}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className="flex w-full max-w-lg cursor-pointer items-center justify-center gap-2 text-xs text-white/60"
+        >
+          <WaveSquare className="h-3 w-3" />
+          <span>or drag and drop a WAV file here</span>
+        </div>
+        <Button
+          onClick={() => readyToSubmit && recordedBlob && handleUpload(recordedBlob)}
+          disabled={!readyToSubmit || uploading}
+          className={cn(
+            "h-14 w-56 rounded-full border border-white/25 text-lg font-semibold tracking-wide transition-all",
+            readyToSubmit
+              ? "bg-white text-black shadow-[0_18px_45px_rgba(255,255,255,0.4)] scale-105"
+              : "bg-white/15 text-white/80 backdrop-blur-2xl hover:bg-white/25",
+          )}
+        >
+          {uploading ? <SpinnerGap className="mr-2 h-4 w-4 animate-spin" /> : null}
+          Next
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-sm text-white/60 underline-offset-4 hover:text-white"
+          onClick={() => {
+            onSkip?.()
+            toast({ title: "Voice skipped", description: "You can come back anytime." })
+          }}
+        >
+          Skip for now
+        </Button>
       </div>
     </div>
   )
