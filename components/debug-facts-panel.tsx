@@ -25,7 +25,9 @@ import {
   type DiagnosticsArtifacts,
 } from "@/app/actions/memory"
 import { getProceduralRules, type ProceduralRule } from "@/app/actions/procedural-rules"
+import type { CommunicationStyle } from "@/app/actions/style"
 import { useAvatar } from "@/components/avatar-context"
+import { StyleConfigPanel } from "@/components/style-config-panel"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -79,12 +81,16 @@ export function DebugFactsPanel({
   initialMemories,
   initialDocuments,
   initialRules,
+  initialStyle,
+  onStyleChange,
   onWipeConfigurations,
 }: {
   initialFacts: Fact[]
   initialMemories: EpisodicMemory[]
   initialDocuments: Document[]
   initialRules: ProceduralRule[]
+  initialStyle?: CommunicationStyle | null
+  onStyleChange?: (style: CommunicationStyle | null) => void
   onWipeConfigurations?: () => Promise<void> | void
 }) {
   const [mounted, setMounted] = useState(false)
@@ -528,6 +534,19 @@ export function DebugFactsPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-3 p-3 text-sm">
+        <section className="rounded-lg border bg-background/80 p-3">
+          <header className="mb-2 space-y-1">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Communication style</p>
+            <p className="text-sm font-medium">Manual override</p>
+            <p className="text-xs text-muted-foreground">
+              The setup wizard only asks for a chat log—edit every field here.
+            </p>
+          </header>
+          <div className="rounded-2xl border bg-background/70 p-2">
+            <StyleConfigPanel initialStyle={initialStyle ?? null} onStyleChange={onStyleChange} />
+          </div>
+        </section>
+
         <section className="rounded-lg border bg-background/80 p-3">
           <header className="mb-2 flex items-center justify-between">
             <div>

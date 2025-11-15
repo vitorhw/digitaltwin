@@ -273,8 +273,36 @@ export function MindMap3D() {
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-red-400">{error}</div>
       )}
 
-      <div className="absolute left-3 top-3 flex flex-col gap-2 text-xs text-white">
-        <div className="rounded border bg-zinc-900/80 px-3 py-2 shadow-lg">
+      <div className="absolute bottom-3 right-3 flex flex-col items-end gap-2 text-xs text-white">
+        {hovered && (
+          <div className="pointer-events-none rounded border bg-zinc-900/80 px-3 py-2 text-xs text-white shadow-lg text-right">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{hovered.kind}</p>
+            <p className="text-sm font-medium">{hovered.label}</p>
+          </div>
+        )}
+        {selected && (
+          <div className="rounded border bg-background/95 px-3 py-2 text-xs text-white shadow-lg text-right">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-300">{selected.kind}</p>
+                <h3 className="text-sm font-semibold leading-tight">{selected.label}</h3>
+              </div>
+              <button className="text-muted-foreground hover:text-foreground" onClick={() => setSelected(null)}>
+                ×
+              </button>
+            </div>
+            {selected.meta?.text && <p className="mt-1 text-sm text-muted-foreground">{selected.meta.text}</p>}
+            <dl className="mt-2 space-y-1 text-left">
+              {infoPairs.map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-2">
+                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+                  <dd className="text-sm text-right">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+        <div className="rounded border bg-zinc-900/80 px-3 py-2 shadow-lg text-right">
           <p className="text-[10px] uppercase tracking-wide text-slate-300">Legend</p>
           <div className="mt-1 space-y-1">
             {[
@@ -294,35 +322,7 @@ export function MindMap3D() {
             </p>
           </div>
         </div>
-        {hovered && (
-          <div className="pointer-events-none rounded border bg-zinc-900/80 px-3 py-2 text-xs text-white shadow-lg">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{hovered.kind}</p>
-            <p className="text-sm font-medium">{hovered.label}</p>
-          </div>
-        )}
       </div>
-      {selected && (
-        <div className="absolute right-3 top-3 max-w-xs space-y-2 rounded-lg border bg-background/95 p-3 text-xs shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{selected.kind}</p>
-              <h3 className="text-sm font-semibold leading-tight">{selected.label}</h3>
-            </div>
-            <button className="text-muted-foreground hover:text-foreground" onClick={() => setSelected(null)}>
-              ×
-            </button>
-          </div>
-          {selected.meta?.text && <p className="text-sm text-muted-foreground">{selected.meta.text}</p>}
-          <dl className="space-y-1">
-            {infoPairs.map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between gap-2">
-                <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-                <dd className="text-sm text-right">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      )}
     </div>
   )
 }

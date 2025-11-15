@@ -8,11 +8,13 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react"
+import { createPortal } from "react-dom"
 import { ArrowClockwise, Camera, CaretDown, Check, SpinnerGap, WaveSquare } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { useAvatar } from "@/components/avatar-context"
 import { cn } from "@/lib/utils"
+import { useSetupFooterPortal } from "@/components/setup-footer-context"
 
 interface MeshData {
   vertices: number[][]
@@ -82,6 +84,7 @@ export function FaceAvatarPanel({ onSkip, onComplete }: FaceAvatarPanelProps = {
   const cameraMenuRef = useRef<HTMLDivElement | null>(null)
 
   const { toast } = useToast()
+  const footerPortal = useSetupFooterPortal()
   const { setMeshData, setFeatures, setTextureUrl } = useAvatar()
 
   const stopCamera = useCallback(() => {
@@ -414,53 +417,58 @@ export function FaceAvatarPanel({ onSkip, onComplete }: FaceAvatarPanelProps = {
           {cameraError ? <p className="text-xs text-amber-200/85">{cameraError}</p> : null}
         </div>
       </div>
-      <div className="mt-12 flex flex-col items-center gap-3 text-white/80">
-        <div
-          onDragOver={(event) => {
-            event.preventDefault()
-            event.dataTransfer.dropEffect = "copy";
-          }}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className="flex w-full max-w-lg cursor-pointer items-center justify-center gap-2 text-xs text-white/60"
-        >
-          <WaveSquare className="h-3 w-3" />
-          <span>or drag and drop a PNG or JPG photo here</span>
-        </div>
-        <Button
-          onClick={() => readyToSubmit && generateAvatar()}
-          disabled={!readyToSubmit}
-          className={cn(
-            "h-14 w-56 rounded-full border border-white/25 text-lg font-semibold tracking-wide transition-all",
-            readyToSubmit
-              ? "bg-white text-black shadow-[0_18px_45px_rgba(255,255,255,0.4)] hover:scale-105"
-              : "bg-white/15 text-white/80 backdrop-blur-2xl",
-          )}
-        >
-          {isGenerating ? <SpinnerGap className="mr-2 h-4 w-4 animate-spin" /> : null}
-          {isGenerating ? "Generating..." : "Next"}
-        </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg"
-          onChange={handleFileInput}
-          className="hidden"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-sm text-white/60 underline-offset-4 hover:text-white"
-          onClick={() => {
-            clearPhotoSelection()
-            stopCamera()
-            onSkip?.()
-            toast({ title: "Avatar skipped", description: "You can come back and upload a photo anytime." })
-          }}
-        >
-          Skip for now
-        </Button>
-      </div>
+      {(() => {
+        const footerContent = (
+          <div className="flex flex-col items-center gap-3 text-white/80">
+            <div
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = "copy";
+              }}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex w-full max-w-lg cursor-pointer items-center justify-center gap-2 text-xs text-white/60"
+            >
+              <WaveSquare className="h-3 w-3" />
+              <span>or drag and drop a PNG or JPG photo here</span>
+            </div>
+            <Button
+              onClick={() => readyToSubmit && generateAvatar()}
+              disabled={!readyToSubmit}
+              className={cn(
+                "h-14 w-56 rounded-full border border-white/25 text-lg font-semibold tracking-wide transition-all",
+                readyToSubmit
+                  ? "bg-white text-black shadow-[0_18px_45px_rgba(255,255,255,0.4)] hover:scale-105"
+                  : "bg-white/15 text-white/80 backdrop-blur-2xl",
+              )}
+            >
+              {isGenerating ? <SpinnerGap className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {isGenerating ? "Generating..." : "Next"}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              onChange={handleFileInput}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-sm text-white/60 underline-offset-4 hover:text-white"
+              onClick={() => {
+                clearPhotoSelection()
+                stopCamera()
+                onSkip?.()
+                toast({ title: "Avatar skipped", description: "You can come back and upload a photo anytime." })
+              }}
+            >
+              Skip for now
+            </Button>
+          </div>
+        )
+        return footerPortal ? createPortal(footerContent, footerPortal) : footerContent
+      })()}
     </div>
   )
 }

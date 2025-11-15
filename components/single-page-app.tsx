@@ -14,7 +14,7 @@ import { DebugFactsPanel } from "@/components/debug-facts-panel";
 import { DraggableAvatar } from "@/components/draggable-avatar";
 import { FaceAvatarPanel } from "@/components/face-avatar-panel";
 import { MindMap3D } from "@/components/mindmap-3d";
-import { StyleConfigPanel } from "@/components/style-config-panel";
+import { StyleSetupPanel } from "@/components/style-setup-panel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,17 +26,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-} from "@/components/ui/select";
-import {
   VoiceCloneProvider,
   useVoiceClone,
 } from "@/components/voice-clone-provider";
 import { VoiceSettingsPanel } from "@/components/voice-settings-panel";
+import { SetupFooterPortalContext } from "@/components/setup-footer-context";
 import { useToast } from "@/hooks/use-toast";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -216,20 +210,25 @@ function AuthenticatedApp({
     initialStyle
   );
   const [styleReady, setStyleReady] = useState(Boolean(initialStyle));
+  const [styleSkipped, setStyleSkipped] = useState(false);
   const [voiceSkipped, setVoiceSkipped] = useState(false);
   const [avatarSkipped, setAvatarSkipped] = useState(false);
-  const voiceComplete = voiceReady || voiceSkipped;
-  const avatarComplete = avatarReady || avatarSkipped;
+  const [voiceSetupComplete, setVoiceSetupComplete] = useState(voiceReady);
+  const [avatarSetupComplete, setAvatarSetupComplete] = useState(avatarReady);
+  const voiceComplete = voiceReady || voiceSkipped || voiceSetupComplete;
+  const avatarComplete = avatarReady || avatarSkipped || avatarSetupComplete;
+  const styleComplete = styleReady || styleSkipped;
   const [selectedPage, setSelectedPage] = useState<PageView>(() => {
     if (!voiceComplete) return "voice";
     if (!avatarComplete) return "avatar";
-    if (!styleReady) return "style";
+    if (!styleComplete) return "style";
     return "chat";
   });
   const currentPage: PageView = selectedPage;
   const [debugOpen, setDebugOpen] = useState(false);
   const [speakTogglePending, setSpeakTogglePending] = useState(false);
-  const [menuValue, setMenuValue] = useState<string>("menu");
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const [tvScreenRect, setTvScreenRect] = useState<DOMRect | null>(null);
   const [avatarInteractionElement, setAvatarInteractionElement] =
     useState<HTMLElement | null>(null);
@@ -238,9 +237,23 @@ function AuthenticatedApp({
     x: 0,
     y: 0,
   });
+  const [setupFooterPortal, setSetupFooterPortal] =
+    useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (voiceReady) {
+      setVoiceSetupComplete(true);
+    }
+  }, [voiceReady]);
+
+  useEffect(() => {
+    if (avatarReady) {
+      setAvatarSetupComplete(true);
+    }
+  }, [avatarReady]);
 
   const handleNav = useCallback(
-    (page: PageView) => {
+    (page: PageView, options?: { force?: boolean }) => {
       const canNavigate =
         page === "voice" ||
         (page === "avatar" && voiceComplete) ||
@@ -248,12 +261,12 @@ function AuthenticatedApp({
         ((page === "chat" || page === "mindmap") &&
           voiceComplete &&
           avatarComplete &&
-          styleReady);
+          styleComplete);
 
-      if (!canNavigate) return;
+      if (!canNavigate && !options?.force) return;
       setSelectedPage(page);
     },
-    [avatarComplete, styleReady, voiceComplete]
+    [avatarComplete, styleComplete, voiceComplete]
   );
 
   const handleSpeakToggle = useCallback(async () => {
@@ -332,8 +345,35 @@ function AuthenticatedApp({
     };
   }, [currentPage]);
 
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (!settingsMenuRef.current) return;
+      if (!settingsMenuRef.current.contains(event.target as Node)) {
+        setSettingsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!settingsMenuOpen) return;
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSettingsMenuOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeydown);
+    return () => {
+      document.removeEventListener("keydown", handleKeydown);
+    };
+  }, [settingsMenuOpen]);
+
   const handleStyleChange = useCallback((next: CommunicationStyle | null) => {
     setStyleData(next);
+    setStyleSkipped(false);
     setStyleReady(Boolean(next));
   }, []);
 
@@ -342,12 +382,15 @@ function AuthenticatedApp({
       await deleteCommunicationStyle();
       setStyleData(null);
       setStyleReady(false);
+      setStyleSkipped(false);
       await deleteVoiceProfile();
       updateProfile(null);
       setSpeakBackEnabledLocal(false);
       resetAvatar();
       setVoiceSkipped(false);
       setAvatarSkipped(false);
+      setVoiceSetupComplete(false);
+      setAvatarSetupComplete(false);
       toast({ title: "Voice, avatar, and style cleared" });
     } catch (error) {
       const message =
@@ -357,22 +400,29 @@ function AuthenticatedApp({
       toast({ title: "Error", description: message, variant: "destructive" });
       throw error;
     }
-  }, [resetAvatar, setSpeakBackEnabledLocal, toast, updateProfile]);
+  }, [
+    resetAvatar,
+    setAvatarSetupComplete,
+    setSpeakBackEnabledLocal,
+    setVoiceSetupComplete,
+    toast,
+    updateProfile,
+  ]);
 
   const mainNavItems = useMemo(
     () => [
       {
         value: "chat" as PageView,
         label: "Chat",
-        disabled: !voiceComplete || !avatarComplete || !styleReady,
+        disabled: !voiceComplete || !avatarComplete || !styleComplete,
       },
       {
         value: "mindmap" as PageView,
         label: "Brain",
-        disabled: !voiceComplete || !avatarComplete || !styleReady,
+        disabled: !voiceComplete || !avatarComplete || !styleComplete,
       },
     ],
-    [avatarComplete, styleReady, voiceComplete]
+    [avatarComplete, styleComplete, voiceComplete]
   );
 
   const setupOptions = useMemo(
@@ -396,37 +446,26 @@ function AuthenticatedApp({
     currentPage === "voice" ||
     currentPage === "avatar" ||
     currentPage === "style";
-  const setupComplete = voiceComplete && avatarComplete && styleReady;
-
-  useEffect(() => {
-    if (isSetupPage) {
-      setMenuValue(currentPage);
-    } else {
-      setMenuValue("menu");
-    }
-  }, [currentPage, isSetupPage]);
+  const setupComplete = voiceComplete && avatarComplete && styleComplete;
 
   const handleSetupSelection = useCallback(
     (value: string) => {
+      setSettingsMenuOpen(false);
       if (value === "signout") {
-        setMenuValue("menu");
         onSignOut();
         return;
       }
       if (value === "toggle-debug") {
-        setMenuValue("menu");
         setDebugOpen((prev) => !prev);
         return;
       }
       if (value === "setup") {
-        setMenuValue("voice");
         handleNav("voice");
         return;
       }
-      setMenuValue(value);
       handleNav(value as PageView);
     },
-    [handleNav, onSignOut, setDebugOpen]
+    [handleNav, onSignOut, setDebugOpen, setSettingsMenuOpen]
   );
 
   const renderPage = () => {
@@ -434,15 +473,12 @@ function AuthenticatedApp({
       case "voice":
         return (
           <SetupScreen
-            step="Step 1"
-            title="Capture your voice"
-            description="Record or upload a clean sample so Coqui can synthesize your speech."
             contentClassName="border-none bg-transparent p-0 shadow-none"
           >
             <VoiceSettingsPanel
               onSkip={() => {
                 setVoiceSkipped(true);
-                setSelectedPage("avatar");
+                handleNav("avatar", { force: true });
                 toast({
                   title: "Voice setup skipped",
                   description: "You can return here anytime.",
@@ -450,7 +486,8 @@ function AuthenticatedApp({
               }}
               onComplete={() => {
                 setVoiceSkipped(false);
-                handleNav("avatar");
+                setVoiceSetupComplete(true);
+                handleNav("avatar", { force: true });
               }}
             />
           </SetupScreen>
@@ -458,18 +495,16 @@ function AuthenticatedApp({
       case "avatar":
         return (
           <SetupScreen
-            step="Step 2"
-            title="Build your avatar"
-            description="Upload a portrait, generate the 3D mesh, and link it to your preferred voice."
           >
             <FaceAvatarPanel
               onSkip={() => {
                 setAvatarSkipped(true);
-                setSelectedPage("style");
+                handleNav("style", { force: true });
               }}
               onComplete={() => {
                 setAvatarSkipped(false);
-                handleNav("style");
+                setAvatarSetupComplete(true);
+                handleNav("style", { force: true });
               }}
             />
           </SetupScreen>
@@ -477,14 +512,19 @@ function AuthenticatedApp({
       case "style":
         return (
           <SetupScreen
-            step="Step 3"
-            title="Tune your style"
-            description="Define tone, phrases, and writing quirks. Paste a conversation for auto-detection or fill it out manually."
             contentClassName="px-0"
           >
-            <StyleConfigPanel
+            <StyleSetupPanel
               initialStyle={styleData}
               onStyleChange={handleStyleChange}
+              onSkip={() => {
+                setStyleSkipped(true);
+                handleNav("chat", { force: true });
+              }}
+              onComplete={() => {
+                setStyleSkipped(false);
+                handleNav("chat", { force: true });
+              }}
             />
           </SetupScreen>
         );
@@ -530,30 +570,39 @@ function AuthenticatedApp({
   return (
     <div className="flex h-screen flex-col bg-background relative">
       {isSetupPage ? (
-        <div className="relative flex min-h-screen flex-1 flex-col bg-gradient-to-br from-[#03170f] via-[#020c08] to-[#010203] text-white">
-          <div className="flex flex-1 overflow-y-auto px-4 py-10">
-            <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-between gap-10 text-center">
-              <SetupProgressHeader
-                currentStep={currentPage}
-                voiceComplete={voiceComplete}
-                avatarComplete={avatarComplete}
-                styleComplete={styleReady}
-                onSelect={handleNav}
-                allComplete={setupComplete}
-                onEnterApp={() => handleNav("chat")}
-              />
-              <div className="w-full">{renderPage()}</div>
+        <SetupFooterPortalContext.Provider value={setupFooterPortal}>
+          <div className="relative flex min-h-screen flex-1 flex-col bg-gradient-to-br from-[#03170f] via-[#020c08] to-[#010203] text-white">
+            <div className="flex flex-1 overflow-y-auto px-4 py-10">
+              <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-between gap-8 text-center">
+                <header className="flex justify-center">
+                  <SetupProgressHeader
+                    currentStep={currentPage}
+                    voiceComplete={voiceComplete}
+                    avatarComplete={avatarComplete}
+                    styleComplete={styleComplete}
+                    onSelect={handleNav}
+                    allComplete={setupComplete}
+                  />
+                </header>
+                <main className="flex flex-1 items-center justify-center">
+                  <div className="flex w-full">{renderPage()}</div>
+                </main>
+                <footer
+                  ref={setSetupFooterPortal}
+                  className="flex min-h-[110px] items-center justify-center"
+                />
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setDebugOpen(true)}
+              className="pointer-events-auto fixed bottom-4 right-4 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-white/10 text-white/80 opacity-80 shadow-[0_8px_20px_rgba(0,0,0,0.35)] transition hover:opacity-100 hover:text-white"
+              aria-label="Open debug panel"
+            >
+              <Bug className="h-4 w-4" weight="fill" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setDebugOpen(true)}
-            className="pointer-events-auto fixed bottom-4 right-4 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-white/10 text-white/80 opacity-80 shadow-[0_8px_20px_rgba(0,0,0,0.35)] transition hover:opacity-100 hover:text-white"
-            aria-label="Open debug panel"
-          >
-            <Bug className="h-4 w-4" weight="fill" />
-          </button>
-        </div>
+        </SetupFooterPortalContext.Provider>
       ) : (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-40 px-3 py-0">
           <div className="pointer-events-auto flex w-full items-center gap-3 py-2.5">
@@ -593,40 +642,66 @@ function AuthenticatedApp({
               </div>
             </div>
             <div className="flex items-center justify-end">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_18px_35px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
-                <Select value={menuValue} onValueChange={handleSetupSelection}>
-                  <SelectTrigger
-                    size="sm"
-                    className="flex h-10 w-10 items-center justify-center rounded-full border-none bg-transparent p-0 text-white [&>svg:last-child]:hidden"
-                  >
-                    <span className="sr-only">Open setup menu</span>
-                    <DotsThreeCircle className="h-6 w-6 text-white" weight="fill" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-2xl border border-white/20 bg-white/10 text-white shadow-[0_25px_65px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
-                    <SelectItem value="menu" className="hidden">
-                      Menu
-                    </SelectItem>
-                    <SelectItem value="setup" disabled={isSetupPage}>
-                      Setup
-                    </SelectItem>
-                    <SelectItem value="toggle-debug">
-                      Console
-                    </SelectItem>
-                    <SelectItem value="signout">
-                      <div className="flex items-center gap-2 text-white">
-                        <SignOut className="h-4 w-4 text-white" />
-                        Logout
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+              <div
+                ref={settingsMenuRef}
+                className="relative flex flex-col items-end"
+              >
+                <button
+                  type="button"
+                  onClick={() => setSettingsMenuOpen((prev) => !prev)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white shadow-[0_18px_35px_rgba(0,0,0,0.45)] transition hover:border-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                  aria-haspopup="menu"
+                  aria-expanded={settingsMenuOpen}
+                  aria-label="Open settings menu"
+                >
+                  <DotsThreeCircle className="h-6 w-6" weight="fill" />
+                </button>
+                {settingsMenuOpen ? (
+                  <div className="absolute right-0 top-full z-30 mt-3 w-56 rounded-2xl border border-white/15 bg-black/90 py-3 text-left text-white shadow-[0_30px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+                    <p className="px-4 pb-2 text-[11px] uppercase tracking-[0.35em] text-white/40">
+                      Settings
+                    </p>
+                    <div className="flex flex-col">
+                      <button
+                        type="button"
+                        disabled={isSetupPage}
+                        onClick={() => handleSetupSelection("setup")}
+                        className={cn(
+                          "flex w-full items-center justify-between px-4 py-2 text-sm transition",
+                          isSetupPage
+                            ? "cursor-not-allowed text-white/30"
+                            : "text-white/80 hover:bg-white/5 hover:text-white"
+                        )}
+                      >
+                        <span>Setup</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetupSelection("toggle-debug")}
+                        className="flex w-full items-center justify-between px-4 py-2 text-sm text-white/80 transition hover:bg-white/5 hover:text-white"
+                      >
+                        <span>Console</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetupSelection("signout")}
+                        className="flex w-full items-center justify-between px-4 py-2 text-sm text-white/80 transition hover:bg-white/5 hover:text-white"
+                      >
+                        <div className="flex items-center gap-2">
+                          <SignOut className="h-4 w-4 text-white" />
+                          <span>Logout</span>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
         </div>
       )}
       {!isSetupPage && (
-        <div className="flex flex-1 min-h-0 overflow-hidden pt-10">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           {renderPage()}
         </div>
       )}
@@ -660,6 +735,8 @@ function AuthenticatedApp({
                 initialMemories={initialMemories}
                 initialDocuments={initialDocuments}
                 initialRules={initialRules}
+                initialStyle={styleData}
+                onStyleChange={handleStyleChange}
                 onWipeConfigurations={handleWipeConfigurations}
               />
             </div>
@@ -673,33 +750,20 @@ function AuthenticatedApp({
 }
 
 interface SetupScreenProps {
-  step: string;
-  title: string;
-  description: string;
   children: React.ReactNode;
-  footer?: React.ReactNode;
   contentClassName?: string;
 }
 
-function SetupScreen({
-  step,
-  title,
-  description,
-  children,
-  footer,
-  contentClassName,
-}: SetupScreenProps) {
+function SetupScreen({ children, contentClassName }: SetupScreenProps) {
   return (
-    <div className="flex h-full w-full flex-1 flex-col items-center gap-4 text-white">
-      <div className={cn("mt-4 flex h-full w-full flex-1 overflow-auto p-8 text-left text-white", contentClassName)}>
-        {children}
-      </div>
-      {footer ? (
-        <div className="mt-4 flex flex-wrap justify-center gap-3 text-white">
-          {footer}
-        </div>
-      ) : null}
-    </div>
+    <section
+      className={cn(
+        "flex w-full flex-1 flex-col text-white",
+        contentClassName
+      )}
+    >
+      {children}
+    </section>
   );
 }
 
@@ -752,7 +816,6 @@ interface SetupProgressHeaderProps {
   styleComplete: boolean;
   onSelect: (step: PageView) => void;
   allComplete: boolean;
-  onEnterApp: () => void;
 }
 
 function SetupProgressHeader({
@@ -762,7 +825,6 @@ function SetupProgressHeader({
   styleComplete,
   onSelect,
   allComplete,
-  onEnterApp,
 }: SetupProgressHeaderProps) {
   const labels: Record<
     PageView,
@@ -842,20 +904,10 @@ function SetupProgressHeader({
             );
           })}
         </div>
-        {currentStep === "style" ? (
-          allComplete ? (
-            <button
-              type="button"
-              onClick={onEnterApp}
-              className="inline-flex items-center justify-center rounded-full border border-white/40 bg-white/10 px-6 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-white/90 shadow-[0_25px_55px_rgba(0,0,0,0.5)] transition hover:bg-white/20 hover:text-white"
-            >
-              Access digital twin
-            </button>
-          ) : (
-            <p className="text-xs text-white/50">
+        {currentStep === "style" && !allComplete ? (
+          <p className="text-xs text-white/50">
             Finish the remaining steps to unlock the Digital Twin experience.
-            </p>
-          )
+          </p>
         ) : null}
       </div>
     </div>

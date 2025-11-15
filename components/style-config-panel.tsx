@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import type { ChangeEvent } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -12,13 +11,10 @@ import {
   getCommunicationStyle,
   updateCommunicationStyle,
   deleteCommunicationStyle,
-  detectConversationSpeakers,
-  analyzeStyleFromConversation,
   type CommunicationStyle,
 } from "@/app/actions/style"
-import { SpinnerGap, Trash, Plus, X, FloppyDisk, UploadSimple } from "@phosphor-icons/react"
+import { SpinnerGap, Trash, Plus, X, FloppyDisk } from "@phosphor-icons/react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 
 const createEmptyStyle = (): CommunicationStyle => ({
   id: "",
@@ -55,12 +51,6 @@ export function StyleConfigPanel({
   const [newTone, setNewTone] = useState("")
   const [hasChanges, setHasChanges] = useState(false)
   const [localStyle, setLocalStyle] = useState<CommunicationStyle | null>(initialStyle ?? null)
-  const [conversationInput, setConversationInput] = useState("")
-  const [speakerOptions, setSpeakerOptions] = useState<string[]>([])
-  const [selectedSpeaker, setSelectedSpeaker] = useState("")
-  const [detectingSpeakers, setDetectingSpeakers] = useState(false)
-  const [analyzingConversation, setAnalyzingConversation] = useState(false)
-  const [fileName, setFileName] = useState("")
   const { toast } = useToast()
 
   useEffect(() => {
@@ -164,77 +154,6 @@ export function StyleConfigPanel({
     }))
   }
 
-  const handleConversationChange = (value: string) => {
-    setConversationInput(value)
-    setSpeakerOptions([])
-    setSelectedSpeaker("")
-  }
-
-  const handleConversationUploadSimple = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setFileName(file.name)
-    try {
-      const text = await file.text()
-      handleConversationChange(text)
-    } catch (error) {
-      toast({
-        title: "Failed to read file",
-        description: error instanceof Error ? error.message : "Please try a different conversation export.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleDetectSpeakers = async () => {
-    if (!conversationInput.trim()) {
-      toast({ title: "Conversation required", description: "Paste or upload a transcript first.", variant: "destructive" })
-      return
-    }
-    setDetectingSpeakers(true)
-    const result = await detectConversationSpeakers(conversationInput)
-    if (result.error) {
-      toast({ title: "Detection failed", description: result.error, variant: "destructive" })
-    } else {
-      const speakers = result.speakers ?? []
-      setSpeakerOptions(speakers)
-      if (!speakers.length) {
-        toast({
-          title: "No speakers found",
-          description: "Try highlighting just a few turns of the conversation.",
-          variant: "destructive",
-        })
-      } else {
-        setSelectedSpeaker(speakers[0])
-      }
-    }
-    setDetectingSpeakers(false)
-  }
-
-  const handleAnalyzeConversation = async () => {
-    if (!conversationInput.trim()) {
-      toast({ title: "Conversation required", description: "Paste or upload a transcript first.", variant: "destructive" })
-      return
-    }
-    if (!selectedSpeaker.trim()) {
-      toast({ title: "Select your speaker", description: "Tell us which participant represents you.", variant: "destructive" })
-      return
-    }
-    setAnalyzingConversation(true)
-    const result = await analyzeStyleFromConversation(conversationInput, selectedSpeaker)
-    if (result.error) {
-      toast({ title: "Analysis failed", description: result.error, variant: "destructive" })
-    } else if (result.analysis) {
-      setLocalStyle((prev) => {
-        const base = prev ?? createEmptyStyle()
-        return { ...base, ...result.analysis }
-      })
-      setHasChanges(true)
-      toast({ title: "Conversation analyzed", description: "Review the detected fields and save when ready." })
-    }
-    setAnalyzingConversation(false)
-  }
-
   const handleStartFromScratch = () => {
     setLocalStyle(createEmptyStyle())
     setStyle(null)
@@ -256,110 +175,49 @@ export function StyleConfigPanel({
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-shrink-0 p-4 border-b">
+    <div className="space-y-4">
+      <div className="rounded-2xl border bg-background/80 p-4 shadow-sm">
         <div className="space-y-3">
           <div>
-            <h3 className="text-lg font-semibold">Communication Style</h3>
-            <p className="text-sm text-muted-foreground">Configure how your digital twin communicates</p>
+            <h3 className="text-base font-semibold">Communication Style</h3>
+            <p className="text-sm text-muted-foreground">
+              Fine-tune the tone detected during Step 3 or craft it manually.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {localStyle && (
+            {localStyle ? (
               <>
                 <Button onClick={handleFloppyDisk} disabled={saving || !hasChanges} size="sm" variant="default">
-                  {saving ? <SpinnerGap className="h-4 w-4 animate-spin mr-2" /> : <FloppyDisk className="h-4 w-4 mr-2" />}
-                  FloppyDisk
+                  {saving ? <SpinnerGap className="mr-2 h-4 w-4 animate-spin" /> : <FloppyDisk className="mr-2 h-4 w-4" />}
+                  Save changes
                 </Button>
                 <Button onClick={handleDelete} variant="destructive" size="sm">
                   <Trash className="h-4 w-4" />
                 </Button>
               </>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleStartFromScratch}>
+                Start from scratch
+              </Button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 p-4">
+      {!localStyle ? (
+        <Card>
+          <CardContent className="space-y-4 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No communication style detected yet. Paste a chat log on Step 3 or build it manually here.
+            </p>
+            <Button variant="outline" size="sm" onClick={handleStartFromScratch}>
+              Create manually
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
         <div className="space-y-4">
-          <section className="rounded-3xl border border-emerald-900/40 bg-emerald-950/20 p-6 shadow-[0_25px_55px_rgba(0,0,0,0.4)]">
-            <div className="space-y-1">
-              <h4 className="text-sm font-semibold text-emerald-100">Jump-start from a conversation</h4>
-              <p className="text-xs text-emerald-200/80">
-                Paste a WhatsApp/Discord thread or upload a .txt export. We&apos;ll detect participants and autofill your style.
-              </p>
-            </div>
-            <div className="space-y-4 text-white">
-              <div className="space-y-2">
-                <Label className="text-xs text-emerald-100">Conversation Transcript</Label>
-                <Textarea
-                  placeholder="Paste a chat log here…"
-                  className="text-xs min-h-[140px] border border-emerald-900/60 bg-black/40"
-                  value={conversationInput}
-                  onChange={(e) => handleConversationChange(e.target.value)}
-                />
-                <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-200">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-emerald-500/70 text-emerald-100 hover:bg-emerald-900/40"
-                    onClick={handleDetectSpeakers}
-                    disabled={detectingSpeakers || !conversationInput.trim()}
-                  >
-                    {detectingSpeakers ? <SpinnerGap className="h-4 w-4 animate-spin mr-2" /> : <UploadSimple className="h-4 w-4 mr-2" />}
-                    Detect speakers
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs text-emerald-100">Who are you in this conversation?</Label>
-                {speakerOptions.length > 0 && (
-                  <Select value={selectedSpeaker} onValueChange={setSelectedSpeaker}>
-                    <SelectTrigger className="text-xs border border-emerald-900/60 bg-black/30 text-white">
-                      <SelectValue placeholder="Select your display name" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {speakerOptions.map((speaker) => (
-                        <SelectItem key={speaker} value={speaker}>
-                          {speaker}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                <Input
-                  placeholder="Type your name/handle as it appears"
-                  value={selectedSpeaker}
-                  onChange={(e) => setSelectedSpeaker(e.target.value)}
-                  className="text-xs border border-emerald-900/60 bg-black/30 text-white"
-                />
-                <Button
-                  onClick={handleAnalyzeConversation}
-                  size="sm"
-                  className="bg-emerald-600 text-white hover:bg-emerald-500"
-                  disabled={analyzingConversation || !conversationInput.trim() || !selectedSpeaker.trim()}
-                >
-                  {analyzingConversation ? <SpinnerGap className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Analyze conversation
-                </Button>
-              </div>
-            </div>
-          </section>
-
-          {!localStyle ? (
-            <Card>
-              <CardContent className="pt-6 space-y-4 text-center">
-                <p className="text-sm text-muted-foreground">
-                  No communication style configured yet. Paste a conversation above or start filling it out manually.
-                </p>
-                <Button variant="outline" size="sm" onClick={handleStartFromScratch}>
-                  Start from scratch
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <>
-              <Card>
+          <Card>
                 <CardHeader>
                   <CardTitle className="text-sm">Tone & Personality</CardTitle>
                 </CardHeader>
@@ -582,10 +440,8 @@ export function StyleConfigPanel({
                   Last analyzed: {new Date(localStyle.last_analyzed_at).toLocaleString()}
                 </p>
               )}
-            </>
-          )}
         </div>
-      </div>
+      )}
     </div>
   )
 }

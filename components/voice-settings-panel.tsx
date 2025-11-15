@@ -9,11 +9,13 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react"
+import { createPortal } from "react-dom"
 import { SpinnerGap, Microphone, CaretDown, WaveSquare, Check } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { useVoiceClone } from "@/components/voice-clone-provider"
 import { cn } from "@/lib/utils"
+import { useSetupFooterPortal } from "@/components/setup-footer-context"
 
 const passage =
   "In the luminous hush of the studio, my thoughts flow like calm currents, warm and sincere. Every word carries a gentle curiosity, guiding the listener toward understanding."
@@ -121,6 +123,7 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
   const recognitionActiveRef = useRef(false)
   const micMenuRef = useRef<HTMLDivElement | null>(null)
 
+  const footerPortal = useSetupFooterPortal()
   const words = useMemo(() => passage.split(" "), [])
   const normalizedWords = useMemo(
     () => words.map((word) => word.replace(/[^a-z']/gi, "").toLowerCase()),
@@ -705,56 +708,61 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
         </div>
       </div>
 
-      <div className="mt-12 flex flex-col items-center gap-3 text-white/80">
-        {recordedBlob && lastRecordingDuration > 0 && lastRecordingDuration < 12 ? (
-          <p className="text-xs text-white/60">
-            Short takes reduce accuracy. Aim for ~12 seconds, but you can still continue.
-          </p>
-        ) : null}
-        <div
-          onDragOver={(event) => {
-            event.preventDefault()
-            event.dataTransfer.dropEffect = "copy"
-          }}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className="flex w-full max-w-lg cursor-pointer items-center justify-center gap-2 text-xs text-white/60"
-        >
-          <WaveSquare className="h-3 w-3" />
-          <span>or drag and drop a WAV file here</span>
-        </div>
-        <Button
-          onClick={() => readyToSubmit && recordedBlob && handleUpload(recordedBlob)}
-          disabled={!readyToSubmit || uploading}
-          className={cn(
-            "h-14 w-56 rounded-full border border-white/25 text-lg font-semibold tracking-wide transition-all",
-            readyToSubmit
-              ? "bg-white text-black shadow-[0_18px_45px_rgba(255,255,255,0.4)] scale-105"
-              : "bg-white/15 text-white/80 backdrop-blur-2xl hover:bg-white/25",
-          )}
-        >
-          {uploading ? <SpinnerGap className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Next
-        </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="audio/*"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-sm text-white/60 underline-offset-4 hover:text-white"
-          onClick={() => {
-            onSkip?.()
-            toast({ title: "Voice skipped", description: "You can come back anytime." })
-          }}
-        >
-          Skip for now
-        </Button>
-      </div>
+      {(() => {
+        const footerContent = (
+          <div className="flex flex-col items-center gap-3 text-white/80">
+            {recordedBlob && lastRecordingDuration > 0 && lastRecordingDuration < 12 ? (
+              <p className="text-xs text-white/60">
+                Short takes reduce accuracy. Aim for ~12 seconds, but you can still continue.
+              </p>
+            ) : null}
+            <div
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = "copy"
+              }}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex w-full max-w-lg cursor-pointer items-center justify-center gap-2 text-xs text-white/60"
+            >
+              <WaveSquare className="h-3 w-3" />
+              <span>or drag and drop a WAV file here</span>
+            </div>
+            <Button
+              onClick={() => readyToSubmit && recordedBlob && handleUpload(recordedBlob)}
+              disabled={!readyToSubmit || uploading}
+              className={cn(
+                "h-14 w-56 rounded-full border border-white/25 text-lg font-semibold tracking-wide transition-all",
+                readyToSubmit
+                  ? "bg-white text-black shadow-[0_18px_45px_rgba(255,255,255,0.4)] scale-105"
+                  : "bg-white/15 text-white/80 backdrop-blur-2xl hover:bg-white/25",
+              )}
+            >
+              {uploading ? <SpinnerGap className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Next
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-sm text-white/60 underline-offset-4 hover:text-white"
+              onClick={() => {
+                onSkip?.()
+                toast({ title: "Voice skipped", description: "You can come back anytime." })
+              }}
+            >
+              Skip for now
+            </Button>
+          </div>
+        )
+        return footerPortal ? createPortal(footerContent, footerPortal) : footerContent
+      })()}
     </div>
   )
 }
