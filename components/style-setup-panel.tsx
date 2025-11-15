@@ -24,14 +24,12 @@ import { cn } from "@/lib/utils";
 import { SpinnerGap } from "@phosphor-icons/react";
 
 interface StyleSetupPanelProps {
-  initialStyle?: CommunicationStyle | null;
   onStyleChange?: (style: CommunicationStyle | null) => void;
   onSkip?: () => void;
   onComplete?: () => void;
 }
 
 export function StyleSetupPanel({
-  initialStyle,
   onStyleChange,
   onSkip,
   onComplete,

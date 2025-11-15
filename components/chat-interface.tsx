@@ -99,7 +99,7 @@ export function ChatInterface() {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const { toast } = useToast()
   const [expandedOps, setExpandedOps] = useState<Set<string>>(new Set())
-  const { profile, speakBackEnabled, updateProfile, enqueueSpeech, voiceStyle } = useVoiceClone()
+  const { profile, speakBackEnabled, enqueueSpeech, voiceStyle } = useVoiceClone()
   const { avatarState, setAudioUrl } = useAvatar()
 
   const speakEnabled = useMemo(() => speakBackEnabled && Boolean(profile), [profile, speakBackEnabled])
@@ -191,7 +191,6 @@ export function ChatInterface() {
     const userText = input.trim()
     if (!userText) return
 
-    const willSpeak = speakEnabled
     setInput("")
     setBusy(true)
     setLog((current) => [
@@ -420,12 +419,7 @@ export function ChatInterface() {
                   </span>
 
                   {bubble.role === "assistant" && bubble.ops && bubble.ops.length > 0 && (
-                    <div
-                      className={cn(
-                        "flex w-full flex-wrap gap-2",
-                        bubble.role === "user" ? "justify-end text-right" : "justify-start text-left",
-                      )}
-                    >
+                    <div className="flex w-full flex-wrap gap-2 justify-start text-left">
                       {[...bubble.ops]
                         .sort((a, b) => {
                           const aScore = (a.retrieved_data as any)?.[0]?.combined_score || (a.args as any).confidence || 0

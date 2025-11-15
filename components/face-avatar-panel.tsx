@@ -77,7 +77,6 @@ export function FaceAvatarPanel({ onSkip, onComplete }: FaceAvatarPanelProps = {
   const [isGenerating, setIsGenerating] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [cameraReady, setCameraReady] = useState(false)
-  const [capturedFromCamera, setCapturedFromCamera] = useState(false)
   const [cameraDevices, setCameraDevices] = useState<CameraOption[]>([])
   const [selectedCameraId, setSelectedCameraId] = useState("")
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false)
@@ -154,11 +153,10 @@ export function FaceAvatarPanel({ onSkip, onComplete }: FaceAvatarPanelProps = {
   }, [selectedCameraId, startCamera, stopCamera])
 
   const applyPhotoSelection = useCallback(
-    (file: File, previewUrl: string, source: "camera" | "upload") => {
+    (file: File, previewUrl: string) => {
       setPhotoFile(file)
       setPhotoPreview(previewUrl)
       setTextureUrl(previewUrl)
-      setCapturedFromCamera(source === "camera")
     },
     [setTextureUrl],
   )
@@ -166,7 +164,6 @@ export function FaceAvatarPanel({ onSkip, onComplete }: FaceAvatarPanelProps = {
   const clearPhotoSelection = useCallback(() => {
     setPhotoFile(null)
     setPhotoPreview(null)
-    setCapturedFromCamera(false)
     setTextureUrl(null)
   }, [setTextureUrl])
 
@@ -195,7 +192,7 @@ export function FaceAvatarPanel({ onSkip, onComplete }: FaceAvatarPanelProps = {
           return
         }
         const file = new File([blob], `avatar-capture-${Date.now()}.jpg`, { type: blob.type })
-        applyPhotoSelection(file, dataUrl, "camera")
+        applyPhotoSelection(file, dataUrl)
         stopCamera()
       },
       "image/jpeg",
@@ -221,7 +218,7 @@ export function FaceAvatarPanel({ onSkip, onComplete }: FaceAvatarPanelProps = {
       }
       try {
         const { file: normalizedFile, previewUrl } = await convertToJpeg(file)
-        applyPhotoSelection(normalizedFile, previewUrl, "upload")
+        applyPhotoSelection(normalizedFile, previewUrl)
         stopCamera()
       } catch (error) {
         toast({

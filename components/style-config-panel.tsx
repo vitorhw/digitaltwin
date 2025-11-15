@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -44,7 +44,6 @@ export function StyleConfigPanel({
   initialStyle?: CommunicationStyle | null
   onStyleChange?: (style: CommunicationStyle | null) => void
 }) {
-  const [style, setStyle] = useState<CommunicationStyle | null>(initialStyle ?? null)
   const [loading, setLoading] = useState(initialStyle === undefined)
   const [saving, setSaving] = useState(false)
   const [newPhrase, setNewPhrase] = useState("")
@@ -57,7 +56,6 @@ export function StyleConfigPanel({
     if (initialStyle === undefined) {
       loadStyle()
     } else {
-      setStyle(initialStyle ?? null)
       setLocalStyle(initialStyle ?? null)
       setHasChanges(false)
       setLoading(false)
@@ -71,7 +69,6 @@ export function StyleConfigPanel({
       toast({ title: "Error", description: result.error, variant: "destructive" })
     } else {
       const nextStyle = result.style ?? null
-      setStyle(nextStyle)
       setLocalStyle(nextStyle)
       setHasChanges(false)
       onStyleChange?.(nextStyle)
@@ -89,7 +86,6 @@ export function StyleConfigPanel({
       toast({ title: "Error", description: result.error, variant: "destructive" })
     } else {
       const updated = result.style as CommunicationStyle
-      setStyle(updated)
       setLocalStyle(updated)
       setHasChanges(false)
       toast({ title: "Success", description: "Style saved" })
@@ -112,7 +108,6 @@ export function StyleConfigPanel({
     if (result.error) {
       toast({ title: "Error", description: result.error, variant: "destructive" })
     } else {
-      setStyle(null)
       setLocalStyle(null)
       setHasChanges(false)
       toast({ title: "Success", description: "Style configuration deleted" })
@@ -156,7 +151,6 @@ export function StyleConfigPanel({
 
   const handleStartFromScratch = () => {
     setLocalStyle(createEmptyStyle())
-    setStyle(null)
     setHasChanges(true)
   }
 
@@ -414,26 +408,6 @@ export function StyleConfigPanel({
                   </div>
                 </CardContent>
               </Card>
-
-              {false && localStyle.example_messages && localStyle.example_messages.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Example Messages</CardTitle>
-                    <CardDescription className="text-xs">
-                      Messages that exemplify your communication style
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {localStyle.example_messages.slice(0, 5).map((msg, i) => (
-                        <div key={i} className="text-xs p-2 bg-muted rounded border">
-                          {msg}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
 
               {localStyle.last_analyzed_at && (
                 <p className="text-xs text-muted-foreground text-center">

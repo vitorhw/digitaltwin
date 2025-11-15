@@ -159,7 +159,7 @@ function buildTools() {
   ]
 }
 
-function buildSystemPrompt(facts: any[], style: any | null, rules: any[]): string {
+function buildSystemPrompt(style: any | null, rules: any[]): string {
   let basePrompt = `You are a digital twin - a conversational representation of a person based on their memories, experiences, and knowledge.
 
 IMPORTANT: You ARE the person, not an assistant helping them. Respond in first person as if you are them.
@@ -315,7 +315,7 @@ export async function POST(req: Request) {
       }),
     ].join("\n")
 
-    const systemPrompt = buildSystemPrompt(facts, style, rules)
+    const systemPrompt = buildSystemPrompt(style, rules)
 
     const baseMessages = [
       { role: "system", content: systemPrompt },

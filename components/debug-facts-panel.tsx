@@ -4,22 +4,13 @@ import type React from "react"
 
 import { useCallback, useEffect, useState } from "react"
 import {
-  proposeFact,
-  confirmFact,
-  deleteFact,
   getCurrentFacts,
   approveFact,
   rejectFact,
-  proposeEpisodic,
-  confirmEpisodic,
   getEpisodicMemories,
-  deleteEpisodicMemory,
   approveEpisodicMemory,
   rejectEpisodicMemory,
-  getDocuments,
-  deleteDocument,
-  insertDocumentChunk,
-  hybridMagnifyingGlass,
+  hybridSearch,
   checkDatabaseFunctions,
   wipeAllUserData,
   type DiagnosticsArtifacts,
@@ -66,20 +57,9 @@ interface EpisodicMemory {
   last_recalled_at?: string
 }
 
-interface Document {
-  id: string
-  doc_uri: string
-  doc_title: string
-  text: string
-  section_path?: string
-  page_number?: number
-  created_at: string
-}
-
 export function DebugFactsPanel({
   initialFacts,
   initialMemories,
-  initialDocuments,
   initialRules,
   initialStyle,
   onStyleChange,
@@ -87,7 +67,6 @@ export function DebugFactsPanel({
 }: {
   initialFacts: Fact[]
   initialMemories: EpisodicMemory[]
-  initialDocuments: Document[]
   initialRules: ProceduralRule[]
   initialStyle?: CommunicationStyle | null
   onStyleChange?: (style: CommunicationStyle | null) => void
@@ -96,7 +75,6 @@ export function DebugFactsPanel({
   const [mounted, setMounted] = useState(false)
   const [facts, setFacts] = useState<Fact[]>(initialFacts)
   const [memories, setMemories] = useState<EpisodicMemory[]>(initialMemories)
-  const [documents, setDocuments] = useState<Document[]>(initialDocuments)
   const [rules, setRules] = useState<ProceduralRule[]>(initialRules)
   const [loading, setLoading] = useState(false)
   const [diagnostics, setDiagnostics] = useState<any>(null)
@@ -104,31 +82,9 @@ export function DebugFactsPanel({
   const { setMeshData, setFeatures, setTextureUrl, setAudioUrl, setVoice } = useAvatar()
   const { updateProfile, setSpeakBackEnabledLocal, voiceStyle, setVoiceStyle } = useVoiceClone()
 
-  // Facts state
-  const [factKey, setFactKey] = useState("")
-  const [factValue, setFactValue] = useState("")
-  const [factConfidence, setFactConfidence] = useState("0.9")
-  const [factSensitivity, setFactSensitivity] = useState<"low" | "medium" | "high">("low")
-  const [factTtl, setFactTtl] = useState("")
-  const [needsConfirmation, setNeedsConfirmation] = useState(false)
   const [wipingConfigs, setWipingConfigs] = useState(false)
 
-  // Episodic state
-  const [episodicText, setEpisodicText] = useState("")
-  const [episodicConfidence, setEpisodicConfidence] = useState("0.9")
-  const [episodicLocation, setEpisodicLocation] = useState("")
-  const [episodicNeedsConfirmation, setEpisodicNeedsConfirmation] = useState(false)
-
-  // Document state
-  const [docUri, setDocUri] = useState("")
-  const [docTitle, setDocTitle] = useState("")
-  const [docText, setDocText] = useState("")
-  const [docSection, setDocSection] = useState("")
-  const [docPage, setDocPage] = useState("")
-
   // Function diagnostics state
-  const [showDiagnostics, setShowDiagnostics] = useState(false)
-
   const applyDiagnosticsArtifacts = useCallback(
     (artifacts?: DiagnosticsArtifacts | null) => {
       if (!artifacts) return
@@ -184,16 +140,14 @@ export function DebugFactsPanel({
 
   const refreshAll = useCallback(async () => {
     setLoading(true)
-    const [factsResult, memoriesResult, documentsResult, rulesResult] = await Promise.all([
+    const [factsResult, memoriesResult, rulesResult] = await Promise.all([
       getCurrentFacts(),
       getEpisodicMemories(),
-      getDocuments(),
       getProceduralRules(),
     ])
 
     if (factsResult.facts) setFacts(factsResult.facts)
     if (memoriesResult.memories) setMemories(memoriesResult.memories)
-    if (documentsResult.documents) setDocuments(documentsResult.documents)
     if (rulesResult.rules) setRules(rulesResult.rules)
 
     setLoading(false)
@@ -210,49 +164,6 @@ export function DebugFactsPanel({
     }
     setLoading(false)
   }, [toast])
-
-  const handleInsertFact = async () => {
-    if (!factKey || !factValue) {
-      toast({ title: "Error", description: "Key and value are required", variant: "destructive" })
-      return
-    }
-
-    setLoading(true)
-    const ttlDays = factTtl ? Number.parseInt(factTtl) : undefined
-    const confidence = Number.parseFloat(factConfidence)
-
-    // Use proposeFact for candidate, confirmFact for confirmed
-    const result = needsConfirmation
-      ? await proposeFact(factKey, factValue, confidence, factSensitivity, ttlDays)
-      : await confirmFact(factKey, factValue, confidence, factSensitivity, ttlDays)
-
-    if (result.success) {
-      toast({
-        title: needsConfirmation ? "Candidate fact inserted" : "Confirmed fact inserted",
-        description: `Key: ${factKey}`,
-      })
-      setFactKey("")
-      setFactValue("")
-      setFactTtl("")
-      await refreshFacts()
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setLoading(false)
-  }
-
-  const handleDeleteFact = async (key: string) => {
-    setLoading(true)
-    const result = await deleteFact(key)
-
-    if (result.success) {
-      toast({ title: "Fact deleted", description: `Key: ${key}` })
-      await refreshFacts()
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setLoading(false)
-  }
 
   const handleApproveFact = useCallback(async (key: string) => {
     setLoading(true)
@@ -280,45 +191,6 @@ export function DebugFactsPanel({
     setLoading(false)
   }, [refreshFacts, toast])
 
-  const handleInsertEpisodic = async () => {
-    if (!episodicText) {
-      toast({ title: "Error", description: "Text is required", variant: "destructive" })
-      return
-    }
-
-    setLoading(true)
-    const confidence = Number.parseFloat(episodicConfidence)
-
-    const result = episodicNeedsConfirmation
-      ? await proposeEpisodic(episodicText, confidence, undefined, episodicLocation || undefined)
-      : await confirmEpisodic(episodicText, confidence, undefined, episodicLocation || undefined)
-
-    if (result.success) {
-      toast({
-        title: episodicNeedsConfirmation ? "Candidate memory inserted" : "Confirmed memory inserted",
-      })
-      setEpisodicText("")
-      setEpisodicLocation("")
-      await refreshAll()
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setLoading(false)
-  }
-
-  const handleDeleteMemory = async (id: string) => {
-    setLoading(true)
-    const result = await deleteEpisodicMemory(id)
-
-    if (result.success) {
-      toast({ title: "Memory deleted" })
-      await refreshAll()
-    } else {
-      toast({ title: "Error", description: result.error, variant: "destructive" })
-    }
-    setLoading(false)
-  }
-
   const handleApproveMemory = useCallback(async (id: string) => {
     setLoading(true)
     const result = await approveEpisodicMemory(id)
@@ -332,25 +204,25 @@ export function DebugFactsPanel({
     setLoading(false)
   }, [refreshAll, toast])
 
-  const [searchQuery, setMagnifyingGlassQuery] = useState("")
-  const [searchResults, setMagnifyingGlassResults] = useState<any[]>([])
-  const [searching, setMagnifyingGlassing] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
 
-  const handleMagnifyingGlass = async () => {
+  const handleSearch = async () => {
     if (!searchQuery.trim()) {
       toast({ title: "Need a query", description: "Type anything to search memories.", variant: "destructive" })
       return
     }
 
-    setMagnifyingGlassing(true)
-    const result = await hybridMagnifyingGlass(searchQuery, 12)
+    setSearching(true)
+    const result = await hybridSearch(searchQuery, 12)
     if (result.results) {
-      setMagnifyingGlassResults(result.results)
-      toast({ title: "MagnifyingGlass complete", description: `Found ${result.results.length} entries.` })
+      setSearchResults(result.results)
+      toast({ title: "Search complete", description: `Found ${result.results.length} entries.` })
     } else {
       toast({ title: "Error", description: result.error, variant: "destructive" })
     }
-    setMagnifyingGlassing(false)
+    setSearching(false)
   }
 
   useEffect(() => {
@@ -508,11 +380,11 @@ export function DebugFactsPanel({
           <div className="flex gap-2">
             <Input
               value={searchQuery}
-              onChange={(e) => setMagnifyingGlassQuery(e.target.value)}
-              placeholder="MagnifyingGlass facts, memories, docs..."
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search memories, facts, docs..."
               className="h-8 text-xs"
             />
-            <Button onClick={handleMagnifyingGlass} disabled={searching} size="sm" className="h-8 px-3 text-[11px]">
+            <Button onClick={handleSearch} disabled={searching} size="sm" className="h-8 px-3 text-[11px]">
               {searching ? <SpinnerGap className="mr-1 h-4 w-4 animate-spin" /> : <MagnifyingGlass className="mr-1 h-4 w-4" />}
               Go
             </Button>

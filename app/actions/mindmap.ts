@@ -134,7 +134,7 @@ function addMindmapNode({ id, label, nodes, position, anchor, parentId, kind, me
     id,
     type: "mindmap",
     position: finalPosition,
-    parentNode: parentId,
+    parentId,
     data: {
       label,
       kind,

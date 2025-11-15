@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 const FACE_AVATAR_API_URL = process.env.FACE_AVATAR_API_URL || "http://localhost:8001"
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {

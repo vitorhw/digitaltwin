@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react"
 import { Canvas } from "@react-three/fiber"
 import { Html, OrbitControls } from "@react-three/drei"
 import type { Node as FlowNode, Edge as FlowEdge } from "@xyflow/react"
-import { cn } from "@/lib/utils"
 
 type ApiNode = FlowNode<{
   label: string
@@ -252,7 +251,7 @@ export function MindMap3D() {
         {edgePositions.length > 0 && (
           <lineSegments>
             <bufferGeometry>
-              <bufferAttribute attach="attributes-position" count={edgePositions.length / 3} array={edgePositions} itemSize={3} />
+              <bufferAttribute attach="attributes-position" args={[edgePositions, 3]} />
             </bufferGeometry>
             <lineBasicMaterial color="#475569" transparent opacity={0.35} />
           </lineSegments>

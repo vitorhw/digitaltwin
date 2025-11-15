@@ -111,7 +111,7 @@ export function VoiceSettingsPanel({ onSkip, onComplete }: VoiceSettingsPanelPro
   const chunksRef = useRef<BlobPart[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const fallbackHighlightTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const fallbackHighlightTimerRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const waveCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)

@@ -6,7 +6,7 @@ import { signIn } from "@/app/actions/auth";
 import type { CommunicationStyle } from "@/app/actions/style";
 import { deleteCommunicationStyle } from "@/app/actions/style";
 import type { VoiceProfile } from "@/app/actions/voice";
-import { deleteVoiceProfile, setSpeakBackEnabled } from "@/app/actions/voice";
+import { deleteVoiceProfile } from "@/app/actions/voice";
 import { ApprovalWatcher } from "@/components/approval-watcher";
 import { AvatarProvider, useAvatar } from "@/components/avatar-context";
 import { ChatInterface } from "@/components/chat-interface";
@@ -36,7 +36,6 @@ import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
   Bug,
-  CheckCircle,
   DotsThreeCircle,
   PenNibStraight,
   SignOut,
@@ -76,7 +75,6 @@ interface SinglePageAppProps {
   isLoggedIn: boolean;
   initialFacts: any[];
   initialMemories: any[];
-  initialDocuments: any[];
   initialRules: any[];
   initialVoiceProfile: VoiceProfile | null;
   initialStyle: CommunicationStyle | null;
@@ -86,7 +84,6 @@ export function SinglePageApp({
   isLoggedIn,
   initialFacts,
   initialMemories,
-  initialDocuments,
   initialRules,
   initialVoiceProfile,
   initialStyle,
@@ -173,7 +170,6 @@ export function SinglePageApp({
         <AuthenticatedApp
           initialFacts={initialFacts}
           initialMemories={initialMemories}
-          initialDocuments={initialDocuments}
           initialRules={initialRules}
           initialStyle={initialStyle}
           onSignOut={handleSignOut}
@@ -188,19 +184,17 @@ type PageView = "voice" | "avatar" | "style" | "chat" | "mindmap";
 function AuthenticatedApp({
   initialFacts,
   initialMemories,
-  initialDocuments,
   initialRules,
   initialStyle,
   onSignOut,
 }: {
   initialFacts: any[];
   initialMemories: any[];
-  initialDocuments: any[];
   initialRules: any[];
   initialStyle: CommunicationStyle | null;
   onSignOut: () => Promise<void> | void;
 }) {
-  const { profile, updateProfile, setSpeakBackEnabledLocal, speakBackEnabled } =
+  const { profile, updateProfile, setSpeakBackEnabledLocal } =
     useVoiceClone();
   const { avatarState, reset: resetAvatar } = useAvatar();
   const { toast } = useToast();
@@ -226,7 +220,6 @@ function AuthenticatedApp({
   });
   const currentPage: PageView = selectedPage;
   const [debugOpen, setDebugOpen] = useState(false);
-  const [speakTogglePending, setSpeakTogglePending] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const [tvScreenRect, setTvScreenRect] = useState<DOMRect | null>(null);
@@ -239,6 +232,9 @@ function AuthenticatedApp({
   });
   const [setupFooterPortal, setSetupFooterPortal] =
     useState<HTMLDivElement | null>(null);
+  const setupFooterRef = useCallback((node: HTMLDivElement | null) => {
+    setSetupFooterPortal(node);
+  }, []);
 
   useEffect(() => {
     if (voiceReady) {
@@ -268,46 +264,6 @@ function AuthenticatedApp({
     },
     [avatarComplete, styleComplete, voiceComplete]
   );
-
-  const handleSpeakToggle = useCallback(async () => {
-    if (!profile) {
-      toast({
-        title: "No voice sample",
-        description: "Upload a voice sample first.",
-      });
-      return;
-    }
-
-    const previous = speakBackEnabled;
-    setSpeakTogglePending(true);
-    setSpeakBackEnabledLocal(!previous);
-
-    try {
-      const result = await setSpeakBackEnabled(!previous);
-      if (result?.error) {
-        throw new Error(result.error);
-      }
-      updateProfile(
-        result.profile ?? { ...profile, speak_back_enabled: !previous }
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast({
-        title: "Unable to update speak-back",
-        description: message,
-        variant: "destructive",
-      });
-      setSpeakBackEnabledLocal(previous);
-    } finally {
-      setSpeakTogglePending(false);
-    }
-  }, [
-    profile,
-    setSpeakBackEnabledLocal,
-    speakBackEnabled,
-    toast,
-    updateProfile,
-  ]);
 
   useEffect(() => {
     if (currentPage !== "chat") {
@@ -425,23 +381,6 @@ function AuthenticatedApp({
     [avatarComplete, styleComplete, voiceComplete]
   );
 
-  const setupOptions = useMemo(
-    () => [
-      { value: "voice" as PageView, label: "Voice", disabled: false },
-      {
-        value: "avatar" as PageView,
-        label: "Avatar",
-        disabled: !voiceComplete,
-      },
-      {
-        value: "style" as PageView,
-        label: "Style",
-        disabled: !voiceComplete || !avatarComplete,
-      },
-    ],
-    [avatarComplete, voiceComplete]
-  );
-
   const isSetupPage =
     currentPage === "voice" ||
     currentPage === "avatar" ||
@@ -515,7 +454,6 @@ function AuthenticatedApp({
             contentClassName="px-0"
           >
             <StyleSetupPanel
-              initialStyle={styleData}
               onStyleChange={handleStyleChange}
               onSkip={() => {
                 setStyleSkipped(true);
@@ -588,7 +526,7 @@ function AuthenticatedApp({
                   <div className="flex w-full">{renderPage()}</div>
                 </main>
                 <footer
-                  ref={setSetupFooterPortal}
+                  ref={setupFooterRef}
                   className="flex min-h-[110px] items-center justify-center"
                 />
               </div>
@@ -711,7 +649,6 @@ function AuthenticatedApp({
           rect={tvScreenRect}
           onPointerEngaged={setChatInteractionLocked}
           onElementReady={setAvatarInteractionElement}
-          onAimChange={setAvatarAim}
         />
       ) : null}
 
@@ -733,7 +670,6 @@ function AuthenticatedApp({
               <DebugFactsPanel
                 initialFacts={initialFacts}
                 initialMemories={initialMemories}
-                initialDocuments={initialDocuments}
                 initialRules={initialRules}
                 initialStyle={styleData}
                 onStyleChange={handleStyleChange}
@@ -895,7 +831,7 @@ function SetupProgressHeader({
                     status === "upcoming" && "border-white/30 text-white/40"
                   )}
                 >
-                  <Icon className="h-4 w-4" weight="regular" />
+                  <Icon className="h-4 w-4" />
                 </button>
                 {index < steps.length - 1 && (
                   <div className="h-px w-12 bg-white/15" />
