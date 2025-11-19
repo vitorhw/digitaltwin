@@ -14,6 +14,7 @@ import { DebugFactsPanel } from "@/components/debug-facts-panel";
 import { DraggableAvatar } from "@/components/draggable-avatar";
 import { FaceAvatarPanel } from "@/components/face-avatar-panel";
 import { MindMap3D } from "@/components/mindmap-3d";
+import { MindMap2D } from "@/components/mindmap-2d";
 import { StyleSetupPanel } from "@/components/style-setup-panel";
 import { Button } from "@/components/ui/button";
 import {
@@ -209,6 +210,7 @@ function AuthenticatedApp({
   const [avatarSkipped, setAvatarSkipped] = useState(false);
   const [voiceSetupComplete, setVoiceSetupComplete] = useState(voiceReady);
   const [avatarSetupComplete, setAvatarSetupComplete] = useState(avatarReady);
+  const [mindmapView, setMindmapView] = useState<"2d" | "3d">("3d");
   const voiceComplete = voiceReady || voiceSkipped || voiceSetupComplete;
   const avatarComplete = avatarReady || avatarSkipped || avatarSetupComplete;
   const styleComplete = styleReady || styleSkipped;
@@ -376,6 +378,7 @@ function AuthenticatedApp({
         value: "mindmap" as PageView,
         label: "Brain",
         disabled: !voiceComplete || !avatarComplete || !styleComplete,
+        hasDropdown: true,
       },
     ],
     [avatarComplete, styleComplete, voiceComplete]
@@ -469,7 +472,7 @@ function AuthenticatedApp({
       case "mindmap":
         return (
           <div className="flex h-full w-full min-h-0 flex-1">
-            <MindMap3D />
+            {mindmapView === "3d" ? <MindMap3D /> : <MindMap2D />}
           </div>
         );
       case "chat":
@@ -560,6 +563,40 @@ function AuthenticatedApp({
               <div className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 shadow-[0_25px_45px_rgba(0,0,0,0.45)] backdrop-blur-3xl">
                 {mainNavItems.map((item) => {
                   const isActive = currentPage === item.value;
+                  
+                  if (item.hasDropdown && item.value === "mindmap") {
+                    return (
+                      <div key={item.value} className="relative flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          className={cn(
+                            "flex items-center justify-center gap-2 rounded-2xl px-4 py-1.5 text-sm capitalize tracking-wide transition",
+                            isActive
+                              ? "bg-white/35 text-white shadow-[0_18px_45px_rgba(0,0,0,0.4)]"
+                              : "text-white/70 hover:bg-white/15"
+                          )}
+                          disabled={item.disabled}
+                          onClick={() => handleNav(item.value)}
+                        >
+                          {item.label.toLowerCase()}
+                        </Button>
+                        <select
+                          value={mindmapView}
+                          onChange={(e) => setMindmapView(e.target.value as "2d" | "3d")}
+                          className={cn(
+                            "h-7 rounded-lg border border-white/20 bg-white/10 px-2 text-xs text-white transition hover:bg-white/15",
+                            "focus:outline-none focus:ring-2 focus:ring-white/40",
+                            item.disabled && "opacity-50 cursor-not-allowed"
+                          )}
+                          disabled={item.disabled}
+                        >
+                          <option value="3d" className="bg-black text-white">3D</option>
+                          <option value="2d" className="bg-black text-white">2D</option>
+                        </select>
+                      </div>
+                    );
+                  }
+                  
                   return (
                     <Button
                       key={item.value}
